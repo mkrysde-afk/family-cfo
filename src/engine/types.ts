@@ -16,6 +16,8 @@ export interface Member {
   isFamily?: boolean
   /** Цвет члена семьи в интерфейсе */
   color: string
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export type AccountKind = 'bank' | 'cash' | 'savings'
@@ -34,6 +36,8 @@ export interface Account {
   balanceConfidence?: Confidence
   archived?: boolean
   note?: string
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export type TxType = 'expense' | 'income' | 'transfer'
@@ -69,6 +73,8 @@ export interface Transaction {
   irregular?: boolean
   origin?: 'statement' | 'manual' | 'recurring'
   confidence?: Confidence
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export type CategoryKind = 'expense' | 'income'
@@ -92,6 +98,8 @@ export interface Category {
   mergeInto?: string
   color: string
   archived?: boolean
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export type Frequency = 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
@@ -118,6 +126,8 @@ export interface Recurring {
   subscription?: boolean
   confidence: Confidence
   note?: string
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export interface Goal {
@@ -136,8 +146,10 @@ export interface Goal {
   /** Цель копит на платёж по долгу: в месяц платежа резерв не вычитается повторно */
   debtId?: string
   /** История пополнений (для «отложено в этом месяце») */
-  contributions?: { date: ISODate; amount: Cents }[]
+  contributions?: { id?: string; date: ISODate; amount: Cents }[]
   note?: string
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 /** Удержание из зарплаты: считается выплаченным автоматически в свою дату */
@@ -158,6 +170,8 @@ export interface Debt {
   deductions: DebtDeduction[]
   confidence: Confidence
   note?: string
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export interface MerchantRule {
@@ -168,6 +182,8 @@ export interface MerchantRule {
   scope?: Scope
   source: 'seed' | 'user'
   hits: number
+  /** Время последнего изменения (ISO) — для синхронизации между телефонами */
+  updatedAt?: string
 }
 
 export interface Coverage {
@@ -191,6 +207,12 @@ export interface Settings {
   /** С этой даты операции вводятся вручную */
   trackingStart: ISODate
   lastBackupAt?: string
+  /** Чей это телефон: член семьи по умолчанию для новых операций (не синхронизируется) */
+  me?: MemberId
+  /** Когда последний раз синхронизировались с общим файлом (не синхронизируется) */
+  lastSyncAt?: string
+  /** Когда меняли общие настройки (подушка, конверты) — для синхронизации */
+  updatedAt?: string
 }
 
 export interface SkippedOccurrence {
@@ -210,6 +232,8 @@ export interface AppData {
   debts: Debt[]
   rules: MerchantRule[]
   settings: Settings
+  /** Удалённые записи — чтобы удаление дошло до второго телефона при синхронизации */
+  deleted?: { id: string; at: string }[]
   /** Ежедневные снимки «Можно потратить» для блока «Что изменилось» */
   snapshots?: { date: ISODate; available: Cents }[]
   meta?: { createdAt: string; source: string; notes?: string[] }

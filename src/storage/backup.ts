@@ -40,15 +40,27 @@ export function migrate(data: AppData): AppData {
   return {
     ...data,
     skipped: data.skipped ?? [],
+    deleted: data.deleted ?? [],
     snapshots: data.snapshots ?? [],
     settings: Object.assign({ theme: 'system', currency: 'EUR', savingsTarget: 0, coverage: [] }, data.settings),
   }
 }
 
+export const SYNC_FILE_NAME = 'family-cfo-sync.json'
+
+/** Общий файл для синхронизации: без личных настроек этого телефона */
+export function syncSnapshot(data: AppData): AppData {
+  const settings = { ...data.settings, theme: 'system' as const }
+  delete settings.me
+  delete settings.lastSyncAt
+  delete settings.lastBackupAt
+  return { ...data, settings, snapshots: [] }
+}
+
 /** Скачивание файла. На iPhone открывает меню «Поделиться» → «Сохранить в Файлы». */
-export async function downloadBackup(data: AppData): Promise<void> {
+export async function downloadBackup(data: AppData, fileName?: string): Promise<void> {
   const text = serializeBackup(data)
-  const name = backupFileName()
+  const name = fileName ?? backupFileName()
   const file = new File([text], name, { type: 'application/json' })
   const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean }
   if (nav.canShare?.({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) {

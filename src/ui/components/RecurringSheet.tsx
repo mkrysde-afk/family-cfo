@@ -17,7 +17,7 @@ export function RecurringSheet({ edit, onClose }: { edit?: Recurring; onClose: (
   const [categoryId, setCategoryId] = useState(edit?.categoryId ?? '')
   const [accountId, setAccountId] = useState(edit?.accountId ?? accounts[0]?.id)
   const [toAccountId, setToAccountId] = useState(edit?.toAccountId ?? accounts.find((a) => a.kind === 'savings')?.id ?? accounts[1]?.id)
-  const [owner, setOwner] = useState(edit?.owner ?? people[0]?.id ?? 'family')
+  const [owner, setOwner] = useState(edit?.owner ?? data.settings.me ?? people[0]?.id ?? 'family')
   const [frequency, setFrequency] = useState<Frequency>(edit?.frequency ?? 'monthly')
   const [startDate, setStartDate] = useState(edit?.startDate ?? today)
   const [endDate, setEndDate] = useState(edit?.endDate ?? '')

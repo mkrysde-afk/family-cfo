@@ -13,7 +13,7 @@ function AccountSheet({ edit, onClose }: { edit?: Account; onClose: () => void }
   const toast = useToast()
   const current = edit ? accountBalance(edit, data.transactions, today) : 0
   const [name, setName] = useState(edit?.name ?? '')
-  const [owner, setOwner] = useState(edit?.owner ?? data.members.find((m) => !m.isFamily)?.id ?? 'family')
+  const [owner, setOwner] = useState(edit?.owner ?? data.settings.me ?? data.members.find((m) => !m.isFamily)?.id ?? 'family')
   const [kind, setKind] = useState<AccountKind>(edit?.kind ?? 'bank')
   const [balance, setBalance] = useState((current / 100).toFixed(2).replace('.', ','))
   const [archived, setArchived] = useState(edit?.archived ?? false)

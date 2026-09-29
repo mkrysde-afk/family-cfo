@@ -10,11 +10,12 @@ import { Family } from './screens/Family'
 import { Goals } from './screens/Goals'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
+import { Sync } from './screens/Sync'
 import { Transactions } from './screens/Transactions'
 
-export type Route = 'home' | 'cfo' | 'tx' | 'more' | 'budget' | 'goals' | 'family' | 'settings'
-const ROUTES: Route[] = ['home', 'cfo', 'tx', 'more', 'budget', 'goals', 'family', 'settings']
-const MORE: Route[] = ['more', 'budget', 'goals', 'family', 'settings']
+export type Route = 'home' | 'cfo' | 'tx' | 'more' | 'budget' | 'goals' | 'family' | 'sync' | 'settings'
+const ROUTES: Route[] = ['home', 'cfo', 'tx', 'more', 'budget', 'goals', 'family', 'sync', 'settings']
+const MORE: Route[] = ['more', 'budget', 'goals', 'family', 'sync', 'settings']
 
 function readRoute(): Route {
   const r = location.hash.replace('#/', '') as Route
@@ -82,6 +83,7 @@ const MORE_ITEMS: { route: Route; title: string; sub: string; icon: keyof typeof
   { route: 'budget', title: 'Бюджет', sub: 'Факт, обычно, рекомендовано', icon: 'budget', color: '#378ADD' },
   { route: 'goals', title: 'Цели и долги', sub: 'Подушка, цели, займы', icon: 'goals', color: '#1D9E75' },
   { route: 'family', title: 'Семья', sub: 'Вклад каждого', icon: 'family', color: '#D4537E' },
+  { route: 'sync', title: 'Синхронизация', sub: 'Общие данные с семьёй', icon: 'repeat', color: '#0F6E56' },
   { route: 'settings', title: 'Настройки', sub: 'Тема, счета, копия', icon: 'settings', color: '#8E8E93' },
 ]
 
@@ -126,6 +128,9 @@ export function App() {
   // Напоминание, если копии не было 14 дней (отсчёт — от последней копии или от загрузки данных)
   const lastSafe = data.settings.lastBackupAt ?? data.meta?.createdAt
   const needBackup = !!lastSafe && (Date.now() - Date.parse(lastSafe)) / 864e5 > 14
+  // Напоминание о синхронизации — только если ею уже пользуются
+  const lastSync = data.settings.lastSyncAt
+  const needSync = !!lastSync && (Date.now() - Date.parse(lastSync)) / 864e5 > 2
 
   return (
     <>
@@ -135,7 +140,12 @@ export function App() {
             {Icons.left} Ещё
           </button>
         )}
-        {needBackup && route === 'home' && (
+        {needSync && route === 'home' && (
+          <button className="banner" onClick={() => go('sync')}>
+            <span className="grow">Давно не синхронизировались с семьёй</span><span>›</span>
+          </button>
+        )}
+        {needBackup && !needSync && route === 'home' && (
           <button className="banner warn" onClick={() => go('settings')}>
             <span className="grow">Давно не было резервной копии — сохранить</span><span>›</span>
           </button>
@@ -147,6 +157,7 @@ export function App() {
         {route === 'budget' && <Budget />}
         {route === 'goals' && <Goals />}
         {route === 'family' && <Family />}
+        {route === 'sync' && <Sync />}
         {route === 'settings' && <Settings />}
       </main>
 
