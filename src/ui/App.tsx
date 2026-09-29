@@ -3,6 +3,7 @@ import { today as todayFn } from '../engine'
 import { BackupError, emptyAppData, parseBackup } from '../storage/backup'
 import { useStore } from '../state/store'
 import { Icons, useToast } from './components/common'
+import { ConnectForm } from './components/ConnectForm'
 import { TransactionSheet } from './components/TransactionSheet'
 import { Budget } from './screens/Budget'
 import { Cfo } from './screens/Cfo'
@@ -39,10 +40,11 @@ function useTheme(theme: 'system' | 'light' | 'dark' | 'pink' | undefined) {
 }
 
 function Onboarding() {
-  const { setData } = useStore()
+  const { setData, joinFamily } = useStore()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [devSeed, setDevSeed] = useState(false)
+  const [joining, setJoining] = useState(false)
 
   useEffect(() => {
     // Только при локальной разработке: начальные данные из папки private/
@@ -58,12 +60,23 @@ function Onboarding() {
     }
   }
 
+  if (joining)
+    return (
+      <div className="onboarding" style={{ textAlign: 'left' }}>
+        <button className="linklike" onClick={() => setJoining(false)}>‹ Назад</button>
+        <h1 style={{ fontSize: 28, margin: '12px 0 8px' }}>Семейные данные</h1>
+        <p className="muted small">Введите те же репозиторий, ключ GitHub и семейный пароль, что на первом телефоне.</p>
+        <ConnectForm submitLabel="Подключиться" onSubmit={async (p) => { await joinFamily(p); toast('Данные семьи загружены') }} />
+      </div>
+    )
+
   return (
     <div className="onboarding">
       <h1>Family CFO</h1>
       <p className="muted">Сколько денег у семьи, сколько из них можно потратить и что будет в конце месяца.</p>
       <div className="stack" style={{ marginTop: 28 }}>
-        <button className="btn primary block" onClick={() => fileRef.current?.click()}>Загрузить мои данные</button>
+        <button className="btn primary block" onClick={() => setJoining(true)}>Подключиться к семейным данным</button>
+        <button className="btn block" onClick={() => fileRef.current?.click()}>Загрузить мои данные из файла</button>
         <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && restore(e.target.files[0])} />
         {devSeed && (
           <button className="btn block" onClick={async () => setData(parseBackup(await (await fetch('/__dev-seed.json')).text()))}>
@@ -73,7 +86,7 @@ function Onboarding() {
         <button className="btn block" onClick={() => setData(emptyAppData(todayFn()))}>Начать с нуля</button>
       </div>
       <p className="small muted" style={{ marginTop: 20 }}>
-        «Загрузить мои данные» — файл резервной копии Family CFO (.json). Данные хранятся только на этом устройстве и никуда не отправляются.
+        «Подключиться» — если синхронизация уже включена на другом телефоне. «Из файла» — резервная копия Family CFO (.json).
       </p>
     </div>
   )
@@ -105,7 +118,7 @@ function More({ go }: { go: (r: Route) => void }) {
 }
 
 export function App() {
-  const { data, loading } = useStore()
+  const { data, loading, sync } = useStore()
   const [route, setRoute] = useState<Route>(readRoute())
   const [adding, setAdding] = useState(false)
   useTheme(data?.settings.theme)
@@ -128,9 +141,8 @@ export function App() {
   // Напоминание, если копии не было 14 дней (отсчёт — от последней копии или от загрузки данных)
   const lastSafe = data.settings.lastBackupAt ?? data.meta?.createdAt
   const needBackup = !!lastSafe && (Date.now() - Date.parse(lastSafe)) / 864e5 > 14
-  // Напоминание о синхронизации — только если ею уже пользуются
-  const lastSync = data.settings.lastSyncAt
-  const needSync = !!lastSync && (Date.now() - Date.parse(lastSync)) / 864e5 > 2
+  // Проблема с автосинхронизацией — показать на главной
+  const needSync = sync.configured && sync.status === 'error'
 
   return (
     <>
@@ -142,7 +154,7 @@ export function App() {
         )}
         {needSync && route === 'home' && (
           <button className="banner" onClick={() => go('sync')}>
-            <span className="grow">Давно не синхронизировались с семьёй</span><span>›</span>
+            <span className="grow">Синхронизация не работает: {sync.error}</span><span>›</span>
           </button>
         )}
         {needBackup && !needSync && route === 'home' && (

@@ -2,9 +2,10 @@ import { useRef, useState } from 'react'
 import { type MergeStats } from '../../engine'
 import { BackupError, downloadBackup, parseBackup, SYNC_FILE_NAME, syncSnapshot } from '../../storage/backup'
 import { useData, useStore } from '../../state/store'
-import { Initial, useToast } from '../components/common'
+import { ConnectForm } from '../components/ConnectForm'
+import { useToast } from '../components/common'
 
-function ago(iso?: string): string {
+export function ago(iso?: string): string {
   if (!iso) return 'ещё не было'
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000)
   if (min < 1) return 'только что'
@@ -13,26 +14,26 @@ function ago(iso?: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
 }
 
-/**
- * Синхронизация двух телефонов через общий файл в iCloud Drive — без сервера.
- * Шаг 1: выбрать общий файл → данные объединяются. Шаг 2: сохранить объединённый файл обратно.
- */
+const STATUS: Record<string, string> = {
+  idle: 'Включена',
+  syncing: 'Синхронизирую…',
+  offline: 'Нет интернета — отправлю, когда появится',
+  error: 'Ошибка',
+  off: 'Выключена',
+}
+
 export function Sync() {
   const data = useData()
-  const { updateSettings, syncWith } = useStore()
+  const { updateSettings, syncWith, sync, connectSync, disconnectSync, syncNow } = useStore()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [result, setResult] = useState<MergeStats | null>(null)
-  const [step, setStep] = useState<1 | 2>(1)
   const people = data.members.filter((m) => !m.isFamily)
   const me = people.find((m) => m.id === data.settings.me)
 
-  async function load(file: File) {
+  async function loadFile(file: File) {
     try {
-      const remote = parseBackup(await file.text())
-      const stats = syncWith(remote)
-      setResult(stats)
-      setStep(2)
+      setResult(syncWith(parseBackup(await file.text())))
     } catch (e) {
       toast(e instanceof BackupError ? e.message : 'Не удалось прочитать файл')
     } finally {
@@ -40,22 +41,10 @@ export function Sync() {
     }
   }
 
-  async function save() {
-    try {
-      await downloadBackup(syncSnapshot(data), SYNC_FILE_NAME)
-      updateSettings({ lastSyncAt: new Date().toISOString() })
-      toast('Общий файл сохранён')
-      setStep(1)
-      setResult(null)
-    } catch {
-      /* отменено */
-    }
-  }
-
   return (
     <>
       <h1 className="page-title">Синхронизация</h1>
-      <p className="page-sub">Общие данные для двух телефонов через папку iCloud — без сервера.</p>
+      <p className="page-sub">Общие данные на двух телефонах. Работает сама: при открытии приложения и после каждой траты.</p>
 
       <div className="section-title">Чей это телефон</div>
       <div className="card">
@@ -72,42 +61,65 @@ export function Sync() {
         </p>
       </div>
 
-      <div className="section-title">Синхронизировать</div>
-      <div className="card stack">
-        <div className="row small"><span className="muted">Последняя синхронизация</span><span>{ago(data.settings.lastSyncAt)}</span></div>
-        <button className={`btn block ${step === 1 ? 'primary' : ''}`} onClick={() => fileRef.current?.click()}>
-          1. Открыть общий файл и объединить
-        </button>
-        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} />
-        {result && (
-          <p className="small good" style={{ margin: 0 }}>
-            Объединено: новых операций {result.added}, изменённых {result.updated}, удалённых {result.removed}.
+      <div className="section-title">Автоматическая синхронизация</div>
+      {sync.configured ? (
+        <div className="card stack">
+          <div className="row"><span className="muted">Статус</span><b className={sync.status === 'error' ? 'bad' : sync.status === 'offline' ? 'warn' : 'good'}>{STATUS[sync.status]}</b></div>
+          <div className="row small"><span className="muted">Последняя синхронизация</span><span>{ago(sync.lastSyncAt)}</span></div>
+          <div className="row small"><span className="muted">Хранилище</span><span className="ellipsis">{sync.repo} (закрытый, зашифровано)</span></div>
+          {sync.error && <p className="small bad" style={{ margin: 0 }}>{sync.error}</p>}
+          <button className="btn primary block" onClick={syncNow} disabled={sync.status === 'syncing'}>Синхронизировать сейчас</button>
+          <button className="btn block danger" onClick={() => { if (confirm('Отключить синхронизацию на этом телефоне? Данные на телефоне и в облаке останутся.')) disconnectSync() }}>
+            Отключить на этом телефоне
+          </button>
+        </div>
+      ) : (
+        <div className="card">
+          <p className="small" style={{ marginTop: 0 }}>
+            Подключите закрытый репозиторий GitHub — и данные будут сами обновляться на обоих телефонах.
+            На первом телефоне придумайте семейный пароль; на втором введите тот же.
           </p>
-        )}
-        <button className={`btn block ${step === 2 ? 'primary' : ''}`} onClick={save}>
-          2. Сохранить общий файл
-        </button>
-        <p className="tiny muted" style={{ margin: 0 }}>
-          При сохранении выберите «Сохранить в Файлы» → общую папку → <b>«Заменить»</b>. Файл: {SYNC_FILE_NAME}.
-          Если оба телефона внесли траты одновременно, ничего не потеряется — всё соберётся при следующей синхронизации.
-        </p>
-      </div>
+          <ConnectForm
+            confirmPassword
+            submitLabel="Подключить"
+            onSubmit={async (p) => {
+              const r = await connectSync(p)
+              toast(r.created ? 'Подключено: данные этого телефона отправлены в облако' : `Подключено: объединено, новых операций ${r.stats.added}`)
+            }}
+          />
+        </div>
+      )}
 
-      <div className="section-title">Первая настройка (один раз)</div>
-      <div className="card small">
-        <ol style={{ margin: 0, paddingLeft: 18 }} className="stack">
-          <li>В приложении «Файлы» → iCloud Drive создайте папку <b>Family CFO</b>. Нажмите на неё долго → «Поделиться» → «Общий доступ» → пригласите второго человека.</li>
-          <li>На этом телефоне нажмите «2. Сохранить общий файл» и сохраните его в эту папку.</li>
-          <li>На втором телефоне: откройте сайт в Safari → «На экран Домой» → «Загрузить мои данные» → выберите <b>{SYNC_FILE_NAME}</b> из общей папки.</li>
-          <li>На втором телефоне: «Синхронизация» → «Чей это телефон», а в Настройках — своя тема (например, «Розовая»).</li>
-          <li>Дальше каждый раз: <b>1. Открыть</b> → <b>2. Сохранить</b>. Например, вечером или перед тем, как смотреть цифры.</li>
-        </ol>
-      </div>
+      {!sync.configured && (
+        <>
+          <div className="section-title">Как подключить (один раз)</div>
+          <div className="card small">
+            <ol style={{ margin: 0, paddingLeft: 18 }} className="stack">
+              <li>Закрытый репозиторий для данных уже создан: <b>family-cfo-data</b> в вашем GitHub.</li>
+              <li>
+                Создайте ключ доступа: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com → Fine-grained token</a>.
+                Название — «Family CFO», срок — 1 год, <b>Repository access → Only select repositories → family-cfo-data</b>,
+                <b> Permissions → Contents → Read and write</b>. Нажмите «Generate token» и скопируйте ключ.
+              </li>
+              <li>Вставьте репозиторий, ключ и придумайте семейный пароль → «Подключить».</li>
+              <li>Второй телефон: открыть сайт → «На экран Домой» → <b>«Подключиться к семейным данным»</b> → тот же репозиторий, ключ и пароль.</li>
+            </ol>
+          </div>
+        </>
+      )}
 
-      <div className="card small muted">
-        {people.map((m) => <span key={m.id} style={{ marginRight: 8 }}><Initial name={m.name} color={m.color} size={20} /></span>)}
-        Тема и «чей телефон» у каждого свои и не синхронизируются. Операции, цели, конверты и счета — общие.
-      </div>
+      <details className="card" style={{ marginTop: 12 }}>
+        <summary className="card-title" style={{ cursor: 'pointer' }}>Через файл (без интернета)</summary>
+        <p className="small muted">Запасной способ: общий файл {SYNC_FILE_NAME} в папке iCloud.</p>
+        <div className="stack">
+          <button className="btn block" onClick={() => fileRef.current?.click()}>Открыть файл и объединить</button>
+          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && loadFile(e.target.files[0])} />
+          {result && <p className="small good" style={{ margin: 0 }}>Объединено: новых {result.added}, изменённых {result.updated}, удалённых {result.removed}.</p>}
+          <button className="btn block" onClick={async () => { try { await downloadBackup(syncSnapshot(data), SYNC_FILE_NAME); toast('Файл сохранён') } catch { /* отменено */ } }}>
+            Сохранить файл
+          </button>
+        </div>
+      </details>
     </>
   )
 }

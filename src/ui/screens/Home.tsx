@@ -24,10 +24,11 @@ import {
 import { useData, useStore } from '../../state/store'
 import { Bar, Donut, Money, useLookups, useToast } from '../components/common'
 import type { Route } from '../App'
+import { ago } from './Sync'
 
 export function Home({ go }: { go: (r: Route) => void }) {
   const data = useData()
-  const { today } = useStore()
+  const { today, sync } = useStore()
   const { cat } = useLookups(data)
   const [showCalc, setShowCalc] = useState(false)
 
@@ -72,7 +73,14 @@ export function Home({ go }: { go: (r: Route) => void }) {
   return (
     <>
       <div className="row" style={{ margin: '0 4px' }}>
-        <span className="muted small">{formatDate(today, true)}</span>
+        <span className="muted small">
+          {formatDate(today, true)}
+          {sync.configured && (
+            <button className="linklike small" style={{ marginLeft: 8, color: sync.status === 'error' ? 'var(--bad)' : 'var(--text-3)' }} onClick={() => go('sync')}>
+              {sync.status === 'syncing' ? '⟳ синхронизация…' : sync.status === 'error' ? '⚠ нет синхронизации' : sync.status === 'offline' ? '☁︎ офлайн' : `☁︎ ${ago(sync.lastSyncAt)}`}
+            </button>
+          )}
+        </span>
         <button className="linklike small" onClick={() => go('settings')}>Настройки</button>
       </div>
 

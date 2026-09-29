@@ -20,6 +20,9 @@ import {
   type Transaction,
 } from '../engine'
 import { migrate } from '../storage/backup'
+import { DEFAULT_PATH, fetchRemote, loadSyncConfig, refOf, saveSyncConfig, syncOnce, type SyncConfig } from '../sync/autoSync'
+import { WrongPasswordError } from '../sync/crypto'
+import { AuthError, checkRepo, NetworkError } from '../sync/github'
 import { requestPersistence, storage } from '../storage/storage'
 
 export function newId(prefix = 'id'): string {
@@ -52,7 +55,33 @@ interface Store {
   updateSettings: (s: Partial<Settings>) => void
   deleteRule: (id: string) => void
   syncWith: (remote: AppData) => MergeStats
+  /** Автосинхронизация через закрытый репозиторий GitHub */
+  sync: SyncState
+  connectSync: (c: ConnectParams) => Promise<{ created: boolean; stats: MergeStats }>
+  joinFamily: (c: ConnectParams) => Promise<void>
+  disconnectSync: () => void
+  syncNow: () => void
   reset: () => Promise<void>
+}
+
+export interface ConnectParams {
+  owner: string
+  repo: string
+  token: string
+  password: string
+}
+
+export interface SyncState {
+  configured: boolean
+  status: 'off' | 'idle' | 'syncing' | 'offline' | 'error'
+  lastSyncAt?: string
+  error?: string
+  repo?: string
+}
+
+function errorText(e: unknown): string {
+  if (e instanceof WrongPasswordError || e instanceof AuthError || e instanceof NetworkError) return e.message
+  return e instanceof Error ? e.message : 'Неизвестная ошибка синхронизации'
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -76,6 +105,89 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [today, setToday] = useState(todayFn())
   const saveTimer = useRef<number | undefined>(undefined)
 
+  // --- автосинхронизация ---
+  const cfgRef = useRef<SyncConfig | null>(loadSyncConfig())
+  const dataRef = useRef<AppData | null>(null)
+  const versionRef = useRef(0) // растёт при каждом изменении пользователем
+  const syncingRef = useRef(false)
+  const syncTimer = useRef<number | undefined>(undefined)
+  const [sync, setSync] = useState<SyncState>(() => {
+    const c = cfgRef.current
+    return c ? { configured: true, status: 'idle', lastSyncAt: c.lastSyncAt, error: c.lastError, repo: `${c.owner}/${c.repo}` } : { configured: false, status: 'off' }
+  })
+  useEffect(() => {
+    dataRef.current = data
+  }, [data])
+
+  const setCfg = useCallback((c: SyncConfig | null) => {
+    cfgRef.current = c
+    saveSyncConfig(c)
+  }, [])
+
+  const runSync = useCallback(async () => {
+    const cfg = cfgRef.current
+    const local = dataRef.current
+    if (!cfg || !local || syncingRef.current) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSync((s) => ({ ...s, status: 'offline' }))
+      return
+    }
+    syncingRef.current = true
+    setSync((s) => ({ ...s, status: 'syncing' }))
+    const startVersion = versionRef.current
+    const nowISO = new Date().toISOString()
+    try {
+      const r = await syncOnce(local, cfg, nowISO)
+      const changedMeanwhile = versionRef.current !== startVersion
+      setDataState((prev) => {
+        if (!prev) return prev
+        // если пользователь что-то добавил, пока шла синхронизация, — объединяем, а не затираем
+        const next = changedMeanwhile ? mergeData(prev, r.data, nowISO).data : r.data
+        storage.save(next)
+        return next
+      })
+      setCfg({ ...cfg, dirty: changedMeanwhile, lastSyncAt: nowISO, lastError: undefined })
+      setSync({ configured: true, status: 'idle', lastSyncAt: nowISO, repo: `${cfg.owner}/${cfg.repo}` })
+      if (changedMeanwhile) window.setTimeout(() => runSyncRef.current(), 1500)
+    } catch (e) {
+      const offline = e instanceof NetworkError
+      const msg = errorText(e)
+      setCfg({ ...cfg, lastError: offline ? undefined : msg })
+      setSync((s) => ({ ...s, status: offline ? 'offline' : 'error', error: offline ? undefined : msg }))
+    } finally {
+      syncingRef.current = false
+    }
+  }, [setCfg])
+  const runSyncRef = useRef(runSync)
+  runSyncRef.current = runSync
+
+  const scheduleSync = useCallback((ms = 3000) => {
+    if (!cfgRef.current) return
+    window.clearTimeout(syncTimer.current)
+    syncTimer.current = window.setTimeout(() => runSyncRef.current(), ms)
+  }, [])
+
+  // Когда синхронизировать: при открытии, при возврате в приложение, при появлении интернета,
+  // раз в минуту, пока приложение на экране, и при уходе из приложения, если есть неотправленное.
+  useEffect(() => {
+    if (loading || !data || !cfgRef.current) return
+    runSyncRef.current()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runSyncRef.current()
+      else if (cfgRef.current?.dirty) runSyncRef.current()
+    }
+    const onOnline = () => runSyncRef.current()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', onOnline)
+    const iv = window.setInterval(() => document.visibilityState === 'visible' && runSyncRef.current(), 60_000)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', onOnline)
+      window.clearInterval(iv)
+    }
+    // запускаем один раз после загрузки данных и при подключении синхронизации
+  }, [loading, !!data, sync.configured])
+
   useEffect(() => {
     storage.load().then((d) => {
       setDataState(d ? migrate(d) : null)
@@ -93,8 +205,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveTimer.current = window.setTimeout(() => storage.save(next), 150)
   }, [])
 
+  /** local = изменение только для этого телефона (снимки, тема) — не требует синхронизации */
   const update = useCallback(
-    (fn: (d: AppData) => AppData) => {
+    (fn: (d: AppData) => AppData, local = false) => {
+      if (!local) {
+        versionRef.current++
+        if (cfgRef.current && !cfgRef.current.dirty) setCfg({ ...cfgRef.current, dirty: true })
+        scheduleSync()
+      }
       setDataState((prev) => {
         if (!prev) return prev
         const next = fn(prev)
@@ -103,7 +221,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next
       })
     },
-    [],
+    [setCfg, scheduleSync],
   )
 
   // Ежедневный снимок «Можно потратить» для блока «Что изменилось»
@@ -114,7 +232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const existing = snaps.find((s) => s.date === today)
     if (existing && existing.available === available) return
     const next = [...snaps.filter((s) => s.date !== today), { date: today, available }].sort((a, b) => a.date.localeCompare(b.date)).slice(-120)
-    update((d) => ({ ...d, snapshots: next }))
+    update((d) => ({ ...d, snapshots: next }), true)
   }, [data, today, update])
 
   const store = useMemo<Store>(() => {
@@ -179,7 +297,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const personal = ['theme', 'accent', 'me', 'lastBackupAt', 'lastSyncAt']
           const shared = Object.keys(s).some((k) => !personal.includes(k))
           return { ...d, settings: { ...d.settings, ...s, ...(shared ? { updatedAt: now() } : {}) } }
-        }),
+        }, !Object.keys(s).some((k) => !['theme', 'accent', 'me', 'lastBackupAt', 'lastSyncAt'].includes(k))),
       deleteRule: (id) => update((d) => ({ ...d, rules: d.rules.filter((r) => r.id !== id), deleted: tombstone(d, id) })),
       syncWith: (remote) => {
         if (!data) return { added: 0, updated: 0, removed: 0 }
@@ -187,12 +305,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         commit(merged)
         return stats
       },
+      sync,
+      connectSync: async (c) => {
+        const cfg: SyncConfig = { owner: c.owner.trim(), repo: c.repo.trim(), path: DEFAULT_PATH, token: c.token.trim(), password: c.password, dirty: true }
+        await checkRepo(refOf(cfg))
+        const local = dataRef.current
+        if (!local) throw new Error('Нет данных на телефоне')
+        const nowISO = now()
+        const r = await syncOnce(local, cfg, nowISO)
+        commit(r.data)
+        setCfg({ ...cfg, dirty: false, lastSyncAt: nowISO })
+        setSync({ configured: true, status: 'idle', lastSyncAt: nowISO, repo: `${cfg.owner}/${cfg.repo}` })
+        return { created: r.created, stats: r.stats }
+      },
+      joinFamily: async (c) => {
+        const cfg: SyncConfig = { owner: c.owner.trim(), repo: c.repo.trim(), path: DEFAULT_PATH, token: c.token.trim(), password: c.password, dirty: false }
+        await checkRepo(refOf(cfg))
+        const remote = await fetchRemote(cfg)
+        if (!remote) throw new Error('В репозитории пока нет данных. Сначала подключите синхронизацию на телефоне, где данные уже есть.')
+        const nowISO = now()
+        commit({ ...remote, settings: { ...remote.settings, lastSyncAt: nowISO, lastBackupAt: nowISO } })
+        setCfg({ ...cfg, lastSyncAt: nowISO })
+        setSync({ configured: true, status: 'idle', lastSyncAt: nowISO, repo: `${cfg.owner}/${cfg.repo}` })
+      },
+      disconnectSync: () => {
+        setCfg(null)
+        setSync({ configured: false, status: 'off' })
+      },
+      syncNow: () => runSyncRef.current(),
       reset: async () => {
+        setCfg(null)
+        setSync({ configured: false, status: 'off' })
         await storage.clear()
         setDataState(null)
       },
     }
-  }, [data, loading, today, commit, update])
+  }, [data, loading, today, commit, update, sync, setCfg])
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }
