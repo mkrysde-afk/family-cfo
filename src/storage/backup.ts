@@ -35,6 +35,8 @@ export function parseBackup(text: string): AppData {
 
 /** Заполняет поля, появившиеся в новых версиях */
 export function migrate(data: AppData): AppData {
+  const settings = data.settings.accent === 'pink' && data.settings.theme !== 'dark' ? { ...data.settings, theme: 'pink' as const, accent: undefined } : data.settings
+  data = { ...data, settings }
   return {
     ...data,
     skipped: data.skipped ?? [],

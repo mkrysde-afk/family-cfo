@@ -133,10 +133,7 @@ export function Settings() {
 
       <div className="section-title">Оформление</div>
       <div className="card">
-        <Segmented value={data.settings.theme} options={[['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']]} onChange={(theme) => updateSettings({ theme })} />
-        <div style={{ marginTop: 10 }}>
-          <Segmented value={data.settings.accent ?? 'blue'} options={[['blue', 'Синий акцент'], ['pink', 'Розовый акцент']]} onChange={(accent) => updateSettings({ accent })} />
-        </div>
+        <Segmented value={data.settings.theme} options={[['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная'], ['pink', 'Розовая']]} onChange={(theme) => updateSettings({ theme })} />
         <div className="row small" style={{ marginTop: 10 }}><span className="muted">Валюта</span><span>Евро (€)</span></div>
       </div>
 

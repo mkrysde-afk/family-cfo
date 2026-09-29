@@ -45,10 +45,14 @@
   color-scheme: dark;
 }
 
-/* Розовый акцент (например, для второго члена семьи) — работает и в светлой, и в тёмной теме */
-:root[data-accent='pink'] { --accent: #d4537e; --accent-bg: rgba(212, 83, 126, 0.12); }
-:root[data-accent='pink'][data-theme='dark'] { --accent: #ff6fa0; --accent-bg: rgba(255, 111, 160, 0.18); }
-:root[data-accent='pink'][data-theme='light'] { --bg: #fbf3f6; --card-2: #f8eef2; }
+/* Розовая тема (например, для второго члена семьи): светлая, с розовыми акцентами и фоном */
+:root[data-accent='pink'] {
+  --accent: #d4537e;
+  --accent-bg: rgba(212, 83, 126, 0.12);
+  --bg: #fbeff4;
+  --card-2: #f9e8ef;
+  --line: rgba(160, 60, 100, 0.14);
+}
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }

@@ -21,19 +21,20 @@ function readRoute(): Route {
   return ROUTES.includes(r) ? r : 'home'
 }
 
-function useTheme(theme: 'system' | 'light' | 'dark' | undefined, accent: 'blue' | 'pink' | undefined) {
+function useTheme(theme: 'system' | 'light' | 'dark' | 'pink' | undefined) {
   useEffect(() => {
-    document.documentElement.dataset.accent = accent ?? 'blue'
+    const pink = theme === 'pink'
+    document.documentElement.dataset.accent = pink ? 'pink' : 'blue'
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {
-      const dark = theme === 'dark' || (theme !== 'light' && mq.matches)
+      const dark = theme === 'dark' || (theme === 'system' && mq.matches) || (theme === undefined && mq.matches)
       document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#000000' : accent === 'pink' ? '#fbf3f6' : '#f2f2f7')
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#000000' : pink ? '#fbeff4' : '#f2f2f7')
     }
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme, accent])
+  }, [theme])
 }
 
 function Onboarding() {
@@ -105,7 +106,7 @@ export function App() {
   const { data, loading } = useStore()
   const [route, setRoute] = useState<Route>(readRoute())
   const [adding, setAdding] = useState(false)
-  useTheme(data?.settings.theme, data?.settings.accent)
+  useTheme(data?.settings.theme)
 
   useEffect(() => {
     const on = () => setRoute(readRoute())

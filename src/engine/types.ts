@@ -177,13 +177,14 @@ export interface Coverage {
 }
 
 export interface Settings {
-  theme: 'system' | 'light' | 'dark'
+  /** pink — светлая розовая тема (например, для второго члена семьи) */
+  theme: 'system' | 'light' | 'dark' | 'pink'
   currency: 'EUR'
   /** Сколько откладывать в подушку в месяц; 0 — приложение считает само */
   savingsTarget: Cents
   /** Ручные лимиты конвертов по категориям (перекрывают расчёт) */
   envelopeOverrides?: Record<string, Cents>
-  /** Цвет акцента интерфейса */
+  /** Устарело: розовый стал темой. Оставлено для чтения старых копий. */
   accent?: 'blue' | 'pink'
   /** Периоды, за которые история операций полная (выписки) */
   coverage: Coverage[]
