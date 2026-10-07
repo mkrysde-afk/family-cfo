@@ -2,14 +2,12 @@ import { useMemo, useState } from 'react'
 import {
   availableToSpend,
   cfoInsights,
-  daysInMonth,
+  addDays,
+  obligationsUntil,
   dueOccurrences,
   eur,
   formatDate,
-  monthKey,
   monthMandatory,
-  monthName,
-  parseISO,
   peopleBudget,
   plannedSpending,
   type Transaction,
@@ -23,7 +21,7 @@ import { ago } from './Sync'
 /** Главный экран — минимум: общий бюджет, двое, запланированное, обязательное, один совет, последние операции */
 export function Home({ go }: { go: (r: Route) => void }) {
   const data = useData()
-  const { today, sync, confirmPending, confirmOccurrence } = useStore()
+  const { today, sync, confirmPending, confirmOccurrence, confirmAllPast } = useStore()
   const toast = useToast()
   const { cat, mem } = useLookups(data)
   const [editing, setEditing] = useState<Transaction | null>(null)
@@ -47,11 +45,26 @@ export function Home({ go }: { go: (r: Route) => void }) {
     [data.transactions],
   )
 
-  const month = monthKey(today)
-  const daysLeft = daysInMonth(month) - parseISO(today).getDate() + 1
+  const cycle = av.cycle
+  const daysLeft = Math.max(Math.round((Date.parse(cycle.nextPayday) - Date.parse(today)) / 864e5), 1)
+  // что сразу спишется из новой зарплаты (первая неделя следующего периода)
+  const afterPayday = useMemo(
+    () => obligationsUntil(data, addDays(cycle.horizon, 7), today).filter((o) => o.date > cycle.horizon),
+    [data, today, cycle.horizon],
+  )
   const unpaid = mandatory.filter((m) => m.state !== 'paid' && !m.income)
   const unpaidSum = unpaid.reduce((s, m) => s + m.amount, 0)
   const incoming = mandatory.filter((m) => m.income)
+  const pastDue = mandatory.filter((m) => !m.income && (m.state === 'due' || m.state === 'pending'))
+  const pastTransfers = due.filter((o) => o.recurring.type === 'transfer')
+
+  function confirmAll() {
+    const n = pastDue.length + pastTransfers.length
+    const sum = pastDue.reduce((s, m) => s + m.amount, 0) + pastTransfers.reduce((s, o) => s + o.recurring.amount, 0)
+    if (!confirm(`Отметить ${n} наступивших платежей на ${eur(sum)} как прошедшие?\n\nПоступления (зарплата, Kindergeld) отмечаются отдельно — когда деньги придут.`)) return
+    confirmAllPast()
+    toast(`Отмечено: ${n}`)
+  }
 
   function tick(t: Transaction) {
     confirmPending(t.id)
@@ -92,19 +105,25 @@ export function Home({ go }: { go: (r: Route) => void }) {
 
       {/* Общий бюджет */}
       <button className="hero center" style={{ width: '100%', background: 'none', border: 0, padding: '12px 0 18px' }} onClick={() => go('cfo')}>
-        <div className="hero-label">Общий бюджет · {monthName(month, false).toLowerCase()}</div>
+        <div className="hero-label">Можно потратить до зарплаты · {formatDate(cycle.nextPayday)}</div>
         <div className={`hero-value num ${av.available < 0 ? 'bad' : ''}`}>{eur(av.available)}</div>
         <div className="hero-sub">
-          {av.available > 0 ? `≈ ${eur(Math.floor(av.available / daysLeft))} в день · ${daysLeft} дн.` : 'До конца месяца денег не хватает'}
+          {av.available > 0 ? `≈ ${eur(Math.floor(av.available / daysLeft))} в день · ${daysLeft} дн.` : 'До зарплаты денег не хватает'}
         </div>
       </button>
+
+      {cycle.salaryLate && (
+        <button className="banner warn" onClick={() => go('tx')}>
+          <span className="grow">Зарплата {formatDate(cycle.start)} не отмечена. Пока её нет, аренда и платежи нового периода вычтены из текущих денег.</span><span>›</span>
+        </button>
+      )}
 
       {/* Двое */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(people.people.length, 1)}, minmax(0, 1fr))`, gap: 10, marginBottom: 12 }}>
         {people.people.map((p) => (
           <div key={p.member.id} className="card" style={{ margin: 0, boxShadow: `inset 3px 0 0 ${p.member.color}` }}>
             <div style={{ fontWeight: 600, color: p.member.color }}>{p.member.name}</div>
-            <div className="tiny muted" style={{ marginTop: 8 }}>Доход за месяц</div>
+            <div className="tiny muted" style={{ marginTop: 8 }}>Доход с {formatDate(cycle.start)}</div>
             <div className="num">{eur(p.incomeMonth)}</div>
             <div className="tiny muted" style={{ marginTop: 6 }}>Остаток</div>
             <div className={`num ${p.remaining < 0 ? 'bad' : ''}`} style={{ fontWeight: 600, fontSize: 18 }}>{eur(p.remaining)}</div>
@@ -155,7 +174,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
       {mandatory.length > 0 && (
         <div className="card">
           <div className="card-head">
-            <span className="card-title">Обязательные платежи</span>
+            <span className="card-title">Платежи до зарплаты</span>
             <span className="small muted num" style={{ whiteSpace: 'nowrap' }}>{unpaid.length ? `ещё ${eur(unpaidSum)}` : 'всё оплачено'}</span>
           </div>
           {[...incoming, ...unpaid.slice(0, 6), ...mandatory.filter((m) => m.state === 'paid').slice(0, Math.max(0, 6 - unpaid.length))].map((m) => (
@@ -172,7 +191,18 @@ export function Home({ go }: { go: (r: Route) => void }) {
               )}
             </div>
           ))}
-          <button className="linklike small" style={{ marginTop: 4 }} onClick={() => go('tx')}>все платежи ›</button>
+          {afterPayday.length > 0 && (
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              Из новой зарплаты в первую неделю: {[...afterPayday].sort((x, y) => y.amount - x.amount).slice(0, 3).map((o) => `${o.label} ${eur(o.amount)}`).join(', ')}
+              {afterPayday.length > 3 && ` и ещё ${afterPayday.length - 3}`} — всего {eur(afterPayday.reduce((s, o) => s + o.amount, 0))}
+            </div>
+          )}
+          <div className="row" style={{ marginTop: 6 }}>
+            <button className="linklike small" onClick={() => go('tx')}>все платежи ›</button>
+            {pastDue.length + pastTransfers.length > 1 && (
+              <button className="btn small" onClick={confirmAll}>✓ Отметить всё прошедшее</button>
+            )}
+          </div>
         </div>
       )}
 

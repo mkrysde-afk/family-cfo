@@ -72,7 +72,8 @@ export function MonthOverview({ go }: { go: (r: Route) => void }) {
           <span className="card-title">Как считается общий бюджет</span>
           <button className="linklike small" onClick={() => setShowCalc((v) => !v)}>{showCalc ? 'скрыть' : 'подробно'}</button>
         </div>
-        <div className="row"><b>Общий бюджет (можно потратить)</b><b className={`num ${av.available < 0 ? 'bad' : ''}`}>{eur(av.available)}</b></div>
+        <div className="small muted" style={{ marginBottom: 6 }}>Период: от зарплаты {formatDate(av.cycle.start)} до зарплаты {formatDate(av.cycle.nextPayday)}</div>
+        <div className="row"><b>Можно потратить до зарплаты</b><b className={`num ${av.available < 0 ? 'bad' : ''}`}>{eur(av.available)}</b></div>
         {av.available > 0 && daysLeft > 0 && <div className="small muted">≈ {eur(Math.floor(av.available / daysLeft))} в день до конца месяца</div>}
         <div className="divider" />
         <div className="row"><span className="muted">На счетах (без накоплений)</span><Money c={av.spendable} /></div>
@@ -91,7 +92,8 @@ export function MonthOverview({ go }: { go: (r: Route) => void }) {
             ))}
             <div className="divider" />
             <div className="muted">
-              Ожидаемый доход до конца месяца ({eur(av.expectedIncome)}) не прибавляется: пока деньги не пришли, тратить их нельзя.
+              Будущие доходы не прибавляются: тратим только деньги, которые уже есть. Платежи после дня зарплаты (аренда, школа)
+              относятся к следующему периоду — их оплатит новая зарплата.
             </div>
           </div>
         )}

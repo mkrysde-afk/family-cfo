@@ -4,6 +4,7 @@ import {
   availableToSpend,
   effectOn,
   learnRule,
+  dueOccurrences,
   mergeData,
   type MergeStats,
   occurrenceToTransaction,
@@ -43,6 +44,8 @@ interface Store {
   confirmOccurrence: (o: Occurrence, amount?: Cents, date?: ISODate) => void
   skipOccurrence: (o: Occurrence) => void
   confirmPending: (id: string) => void
+  /** Отметить прошедшими все наступившие обязательные платежи (без поступлений) */
+  confirmAllPast: () => void
   saveRecurring: (r: Recurring) => void
   deleteRecurring: (id: string) => void
   saveGoal: (g: Goal) => void
@@ -267,6 +270,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       confirmOccurrence: (o, amount, date) =>
         update((d) => ({ ...d, transactions: [...d.transactions, stamp(occurrenceToTransaction(o, newId('tx'), amount, date))] })),
       skipOccurrence: (o) => update((d) => ({ ...d, skipped: [...d.skipped, { recurringId: o.recurring.id, occurrence: o.date }] })),
+      confirmAllPast: () =>
+        update((d) => {
+          const occ = dueOccurrences(d, today).filter((o) => o.recurring.type !== 'income')
+          const added = occ.map((o) => stamp(occurrenceToTransaction(o, newId('tx'))))
+          const txs = d.transactions.map((t) => (t.status === 'pending' && t.type !== 'income' && t.date <= today ? stamp({ ...t, status: 'posted' as const }) : t))
+          return { ...d, transactions: [...txs, ...added] }
+        }),
       confirmPending: (id) =>
         update((d) => ({ ...d, transactions: d.transactions.map((x) => (x.id === id ? stamp({ ...x, status: 'posted' as const, date: x.date < today ? x.date : today }) : x)) })),
       saveRecurring: (r) => update((d) => ({ ...d, recurring: upsert(d.recurring, r) })),

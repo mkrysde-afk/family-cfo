@@ -1,6 +1,5 @@
 import { accountBalance } from './balances'
-import { obligationsUntil, reservedAmount } from './available'
-import { monthEnd, monthKey, monthStart } from './dates'
+import { obligationsUntil, payCycle, reservedAmount } from './available'
 import { occurrences } from './recurring'
 import type { Account, AppData, Cents, ISODate, Member, Transaction } from './types'
 
@@ -11,9 +10,9 @@ export interface PersonBudget {
   balance: Cents
   /** что ещё спишется с этих карт до конца месяца (обязательные, запланированные, ожидающие) */
   obligations: Cents
-  /** остаток = деньги на карте − обязательства */
+  /** остаток = деньги на карте − то, что спишется с неё до следующей зарплаты */
   remaining: Cents
-  /** доход за текущий месяц (уже поступивший) */
+  /** доход за текущий зарплатный период (уже поступивший) */
   incomeMonth: Cents
   /** остаток карты известен неточно */
   uncertain: boolean
@@ -29,11 +28,11 @@ export interface PeopleBudget {
 
 /**
  * Остаток по каждому члену семьи: деньги на его/её повседневных счетах минус то,
- * что с этих счетов ещё спишется до конца месяца. Сумма остатков + общие счета − отложенное
+ * что с этих счетов ещё спишется до следующей зарплаты. Сумма остатков + общие счета − отложенное
  * равна общему бюджету «Можно потратить».
  */
 export function peopleBudget(data: AppData, todayISO: ISODate): PeopleBudget {
-  const horizon = monthEnd(monthKey(todayISO))
+  const horizon = payCycle(data, todayISO).horizon
   const obligations = obligationsUntil(data, horizon, todayISO)
   const spendable = data.accounts.filter((a) => !a.archived && a.kind !== 'savings')
   const sumFor = (accs: Account[]) => {
@@ -42,7 +41,7 @@ export function peopleBudget(data: AppData, todayISO: ISODate): PeopleBudget {
     const obl = obligations.filter((o) => o.accountId && ids.has(o.accountId)).reduce((s, o) => s + o.amount, 0)
     return { balance, obligations: obl, remaining: balance - obl }
   }
-  const from = monthStart(monthKey(todayISO))
+  const from = payCycle(data, todayISO).start
   const people = data.members
     .filter((m) => !m.isFamily)
     .map((member) => {
@@ -72,15 +71,15 @@ export interface MandatoryItem {
 }
 
 /**
- * Обязательные платежи: всё за текущий месяц (оплачено / ждёт подтверждения / впереди)
- * плюс неподтверждённые платежи прошлых месяцев и поступления, ждущие подтверждения.
+ * Обязательные платежи текущего зарплатного периода (оплачено / ждёт подтверждения / впереди)
+ * плюс неподтверждённые платежи прошлых периодов и поступления, ждущие подтверждения.
  */
 export function monthMandatory(data: AppData, todayISO: ISODate): MandatoryItem[] {
-  const m = monthKey(todayISO)
+  const cycle = payCycle(data, todayISO)
   const items: MandatoryItem[] = []
-  for (const o of occurrences(data, data.settings.trackingStart, monthEnd(m), todayISO)) {
+  for (const o of occurrences(data, data.settings.trackingStart, cycle.horizon, todayISO)) {
     if (o.state === 'skipped' || o.recurring.type === 'transfer') continue
-    const thisMonth = o.date >= monthStart(m)
+    const thisMonth = o.date >= cycle.start
     if (o.recurring.type === 'income') {
       if (o.state === 'due') items.push({ key: `${o.recurring.id}|${o.date}`, label: o.recurring.name, date: o.date, amount: o.recurring.amount, state: 'due', income: true, recurringId: o.recurring.id })
       continue
@@ -96,16 +95,16 @@ export function monthMandatory(data: AppData, todayISO: ISODate): MandatoryItem[
     })
   }
   for (const t of data.transactions) {
-    if (t.status !== 'pending' || t.type === 'transfer' || t.date > monthEnd(m)) continue
+    if (t.status !== 'pending' || t.type === 'transfer' || t.date > cycle.horizon) continue
     items.push({ key: t.id, label: t.description, date: t.date, amount: t.amount, state: 'pending', txId: t.id, income: t.type === 'income' })
   }
   const order: Record<MandatoryState, number> = { due: 0, pending: 1, upcoming: 2, paid: 3 }
   return items.sort((a, b) => order[a.state] - order[b.state] || a.date.localeCompare(b.date))
 }
 
-/** Запланированные траты («маникюр 40 €»): текущий месяц и просроченные, затем будущие */
+/** Запланированные траты («маникюр 40 €»): до следующей зарплаты и просроченные, затем более поздние */
 export function plannedSpending(data: AppData, todayISO: ISODate): { now: Transaction[]; later: Transaction[] } {
-  const end = monthEnd(monthKey(todayISO))
+  const end = payCycle(data, todayISO).horizon
   const planned = data.transactions
     .filter((t) => t.status === 'planned' && t.type === 'expense' && !t.recurringId && !t.debtId)
     .sort((a, b) => a.date.localeCompare(b.date))

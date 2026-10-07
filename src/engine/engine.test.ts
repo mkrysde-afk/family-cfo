@@ -104,6 +104,52 @@ describe('Балансы и «Можно потратить»', () => {
   })
 })
 
+describe('Бюджет до зарплаты (зарплатный период)', () => {
+  const rec = (id: string, day: string, amount: number, type: 'income' | 'expense' = 'expense', month = '10'): Recurring => ({
+    id, name: id, type, amount, categoryId: type === 'income' ? 'salary' : 'rent', accountId: 'bank', owner: 'a', scope: 'family',
+    frequency: 'monthly', startDate: `2026-${month}-${day}`, active: true, confidence: 'high',
+  })
+  const setup = () => {
+    const d = base()
+    d.settings.trackingStart = '2026-10-01'
+    d.accounts.forEach((a) => (a.anchor.date = '2026-09-30'))
+    d.recurring.push(rec('salary', '27', 250000, 'income'), rec('rent', '30', 80000), rec('phone', '09', 5000))
+    return d
+  }
+
+  it('аренда и школа после зарплаты не вычитаются — их оплатит новая зарплата; платежи до зарплаты вычитаются', () => {
+    const a = availableToSpend(setup(), '2026-10-07')
+    expect(a.cycle.nextPayday).toBe('2026-10-27')
+    expect(a.horizon).toBe('2026-10-26')
+    expect(a.available).toBe(150000 - 5000) // только телефон 9-го
+  })
+
+  it('будущие доходы не прибавляются (зарплата, непостоянный доход партнёра)', () => {
+    const d = setup()
+    d.recurring.push({ ...rec('minijob', '10', 60300, 'income'), owner: 'b' })
+    expect(availableToSpend(d, '2026-10-07').available).toBe(150000 - 5000)
+  })
+
+  it('зарплата пришла раньше срока и отмечена — новый период начинается сразу', () => {
+    const d = setup()
+    d.transactions.push(tx({ type: 'income', amount: 250000, date: '2026-10-26', accountId: 'bank', categoryId: 'salary', recurringId: 'salary', occurrence: '2026-10-27' }))
+    d.transactions.push(tx({ type: 'expense', amount: 5000, date: '2026-10-09', accountId: 'bank', recurringId: 'phone', occurrence: '2026-10-09' }))
+    const a = availableToSpend(d, '2026-10-26')
+    expect(a.cycle.paidEarly).toBe(true)
+    expect(a.horizon).toBe('2026-11-26')
+    // остаток с зарплатой − аренда 30.10 − телефон 9.11
+    expect(a.available).toBe(150000 - 5000 + 250000 - 80000 - 5000)
+  })
+
+  it('зарплата задержалась — аренда уже вычитается и есть предупреждение', () => {
+    const d = setup()
+    d.transactions.push(tx({ type: 'expense', amount: 5000, date: '2026-10-09', accountId: 'bank', recurringId: 'phone', occurrence: '2026-10-09' }))
+    const a = availableToSpend(d, '2026-10-28')
+    expect(a.cycle.salaryLate).toBe(true)
+    expect(a.available).toBe(150000 - 5000 - 80000 - 5000)
+  })
+})
+
 describe('Регулярные платежи', () => {
   const r: Recurring = { id: 'k', name: 'Страховка', type: 'expense', amount: 51719, categoryId: 'rent', accountId: 'bank', owner: 'family', scope: 'family', frequency: 'semiannual', startDate: '2025-12-29', active: true, confidence: 'medium' }
 

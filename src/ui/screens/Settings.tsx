@@ -135,6 +135,15 @@ export function Settings() {
       <div className="card">
         <Segmented value={data.settings.theme} options={[['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная'], ['pink', 'Розовая']]} onChange={(theme) => updateSettings({ theme })} />
         <div className="row small" style={{ marginTop: 10 }}><span className="muted">Валюта</span><span>Евро (€)</span></div>
+        <div className="row small" style={{ marginTop: 10 }}>
+          <label className="muted" htmlFor="payday">День зарплаты</label>
+          <select id="payday" value={data.settings.payday ?? ''} onChange={(e) => updateSettings({ payday: e.target.value ? Number(e.target.value) : undefined })}
+            style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 15 }}>
+            <option value="">по зарплате (авто)</option>
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}-е число</option>)}
+          </select>
+        </div>
+        <p className="tiny muted" style={{ margin: '6px 0 0' }}>Бюджет считается от зарплаты до зарплаты. Если зарплата пришла раньше — отметьте её, и новый период начнётся сразу.</p>
       </div>
 
       <div className="section-title">Члены семьи</div>
