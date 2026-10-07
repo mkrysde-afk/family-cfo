@@ -100,7 +100,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
   const whenLabel = (d: string) => (d === today ? 'сегодня' : d < today ? 'просрочено' : formatDate(d))
   const txTitle = (t: Transaction) =>
     t.type === 'transfer'
-      ? `${data.accounts.find((a) => a.id === t.fromAccountId)?.name ?? '?'} → ${data.accounts.find((a) => a.id === t.toAccountId)?.name ?? '?'}`
+      ? `${data.accounts.find((a) => a.id === t.fromAccountId)?.name ?? 'удалённый счёт'} → ${data.accounts.find((a) => a.id === t.toAccountId)?.name ?? 'удалённый счёт'}`
       : t.description || cat(t.categoryId)?.name || 'Операция'
 
   return (
@@ -144,7 +144,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
 
       {/* Статьи бюджета */}
       {fb.envelopes.map((e) => (
-        <button key={e.category.id} className="card" style={{ width: '100%', border: 0, textAlign: 'left', display: 'block', padding: '11px 14px', marginBottom: 8 }} onClick={() => !limited && setItemEdit(e)}>
+        <button key={e.category.id} className="card" style={{ width: '100%', border: 0, textAlign: 'left', display: 'block', padding: '11px 14px', marginBottom: 8 }} onClick={() => setItemEdit(e)}>
           <div className="row">
             <span style={{ fontWeight: 600 }}>{e.category.name}</span>
             <b className={`num ${e.left < 0 ? 'bad' : ''}`}>{e.left < 0 ? `перерасход ${eur(-e.left)}` : eur(e.left)}</b>
@@ -175,8 +175,9 @@ export function Home({ go }: { go: (r: Route) => void }) {
             <div className="num">{eur(p.incomeMonth)}</div>
             <div className="tiny muted" style={{ marginTop: 6 }}>Остаток</div>
             <div className={`num ${p.remaining < 0 ? 'bad' : ''}`} style={{ fontWeight: 600, fontSize: 18 }}>{eur(p.remaining)}</div>
+            <div className="tiny muted num" style={{ marginTop: 2 }}>карта {eur(p.onCards)} · наличные {eur(p.inCash)}</div>
             {p.uncertain && (
-              <button className="linklike tiny" style={{ marginTop: 4, textAlign: 'left' }} onClick={() => go('settings')}>остаток карты не указан</button>
+              <button className="linklike tiny" style={{ marginTop: 4, textAlign: 'left' }} onClick={() => go('settings')}>{p.accounts.some((a) => a.kind === 'cash' && a.balanceConfidence === 'low') ? 'укажите наличные' : 'остаток карты не указан'}</button>
             )}
           </div>
         ))}
@@ -316,7 +317,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
         <ConfirmSheet label={confirming.label} date={confirming.date} expected={confirming.amount} income={confirming.income}
           onConfirm={(amount) => confirmMandatory(confirming, amount)} onClose={() => setConfirming(null)} />
       )}
-      {itemEdit && <BudgetItemSheet edit={itemEdit === 'new' ? undefined : itemEdit} onClose={() => setItemEdit(null)} />}
+      {itemEdit && <BudgetItemSheet edit={itemEdit === 'new' ? undefined : itemEdit} onClose={() => setItemEdit(null)} onOpenTx={(t) => { setItemEdit(null); setEditing(t) }} />}
     </>
   )
 }

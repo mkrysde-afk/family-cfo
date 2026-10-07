@@ -9,7 +9,7 @@ const COLORS = ['#378ADD', '#1D9E75', '#D85A30', '#BA7517', '#534AB7', '#D4537E'
 
 function AccountSheet({ edit, onClose }: { edit?: Account; onClose: () => void }) {
   const data = useData()
-  const { today, saveAccount, setAccountBalance } = useStore()
+  const { today, saveAccount, setAccountBalance, deleteAccount } = useStore()
   const toast = useToast()
   const current = edit ? accountBalance(edit, data.transactions, today) : 0
   const [name, setName] = useState(edit?.name ?? '')
@@ -55,6 +55,14 @@ function AccountSheet({ edit, onClose }: { edit?: Account; onClose: () => void }
       </p>
       {edit?.note && <p className="small muted" style={{ margin: '0 4px 12px' }}>{edit.note}</p>}
       <button className="btn primary block" onClick={save}>Сохранить</button>
+      {edit && (
+        <button className="btn danger block" style={{ marginTop: 8 }} onClick={() => {
+          if (!confirm(`Удалить «${edit.name}» из источников? Старые операции останутся в истории, но этот счёт больше не будет учитываться и показываться.`)) return
+          deleteAccount(edit.id)
+          toast('Источник удалён')
+          onClose()
+        }}>Удалить источник</button>
+      )}
     </Sheet>
   )
 }
@@ -212,7 +220,7 @@ function FullSettings() {
 
       <div className="section-title">Источники денег</div>
       <div className="list">
-        {data.accounts.map((a) => (
+        {data.accounts.filter((a) => !a.archived).map((a) => (
           <button className="list-item" key={a.id} onClick={() => setAcc(a)} style={{ opacity: a.archived ? 0.5 : 1 }}>
             <div className="grow">
               <div className="title">{a.name}</div>

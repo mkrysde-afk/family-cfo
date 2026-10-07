@@ -55,3 +55,33 @@ describe('Главный экран: люди, обязательные и за�
     expect(plannedSpending(d, D).now).toHaveLength(0)
   })
 })
+
+import { splitCashPerPerson, cashIdFor } from './cash'
+import { mergeData } from './sync'
+
+describe('Личные наличные', () => {
+  it('у каждого свой кошелёк, остаток человека = карта + наличные; общий пустой кошелёк уходит в архив', () => {
+    const d0 = family()
+    d0.accounts.find((a) => a.id === 'cash')!.anchor.amount = 0
+    const d = splitCashPerPerson(d0, D, '2026-10-07T10:00:00Z')
+    expect(d.accounts.find((a) => a.id === 'cash')!.archived).toBe(true)
+    expect(d.accounts.filter((a) => a.kind === 'cash' && !a.archived).map((a) => a.owner).sort()).toEqual(['a', 'b'])
+    // Б заплатила наличными 40 €
+    d.transactions.push(tx({ type: 'expense', amount: 4000, date: D, accountId: cashIdFor('b'), owner: 'b', categoryId: 'cafe' }))
+    const b = peopleBudget(d, D).people.find((x) => x.member.id === 'b')!
+    expect(b.inCash).toBe(-4000)
+    expect(b.onCards).toBe(20000 + 60300)
+    expect(b.remaining).toBe(20000 + 60300 - 4000 - 6900)
+    // повторный запуск ничего не меняет
+    expect(splitCashPerPerson(d, D, '2026-10-08T10:00:00Z')).toBe(d)
+  })
+
+  it('перенос на двух телефонах не создаёт дублей кошельков при синхронизации', () => {
+    const base = family()
+    base.accounts.find((a) => a.id === 'cash')!.anchor.amount = 0
+    const a = splitCashPerPerson(structuredClone(base), D, '2026-10-07T10:00:00Z')
+    const b = splitCashPerPerson(structuredClone(base), D, '2026-10-07T10:05:00Z')
+    const merged = mergeData(a, b, '2026-10-07T11:00:00Z').data
+    expect(merged.accounts.filter((x) => x.kind === 'cash' && !x.archived)).toHaveLength(2)
+  })
+})

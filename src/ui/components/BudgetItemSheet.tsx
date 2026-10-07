@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { budgetItems, eur, parseAmount, type CycleEnvelope } from '../../engine'
+import { budgetItems, eur, formatDate, parseAmount, type CycleEnvelope, type Transaction } from '../../engine'
 import { useData, useStore } from '../../state/store'
 import { Sheet, useToast } from './common'
 
 /** Добавить / изменить статью бюджета на период (продукты, бензин…) */
-export function BudgetItemSheet({ edit, onClose }: { edit?: CycleEnvelope; onClose: () => void }) {
+export function BudgetItemSheet({ edit, onClose, onOpenTx }: { edit?: CycleEnvelope; onClose: () => void; onOpenTx?: (t: Transaction) => void }) {
   const data = useData()
-  const { updateSettings } = useStore()
+  const { updateSettings, limited } = useStore()
   const toast = useToast()
   const items = budgetItems(data)
   const used = new Set(items.map((i) => i.categoryId))
@@ -34,7 +34,32 @@ export function BudgetItemSheet({ edit, onClose }: { edit?: CycleEnvelope; onClo
   }
 
   return (
-    <Sheet title={edit ? edit.category.name : 'Новая статья'} onClose={onClose} onDone={save} doneDisabled={!valid}>
+    <Sheet title={edit ? edit.category.name : 'Новая статья'} onClose={onClose} onDone={limited ? undefined : save} doneDisabled={!valid}>
+      {edit && (
+        <>
+          <div className="row" style={{ margin: '0 4px 8px' }}>
+            <span className="muted">Потрачено {eur(edit.spent, { cents: true })} из {eur(edit.amount)}</span>
+            <b className={`num ${edit.left < 0 ? 'bad' : ''}`}>{edit.left < 0 ? `перерасход ${eur(-edit.left)}` : `осталось ${eur(edit.left)}`}</b>
+          </div>
+          <div className="list">
+            {edit.txs.length === 0 && <div className="list-item small muted">В этом периоде трат по статье ещё не было.</div>}
+            {edit.txs.map((t) => {
+              const m = data.members.find((x) => x.id === t.owner)
+              return (
+                <button key={t.id} className="list-item" onClick={() => onOpenTx?.(t)}>
+                  <div className="grow">
+                    <div className="title ellipsis">{t.description || edit.category.name}</div>
+                    <div className="sub">{formatDate(t.date)}{m && !m.isFamily ? <> · <span style={{ color: m.color }}>{m.name}</span></> : null}</div>
+                  </div>
+                  <span className="num">−{eur(t.amount, { cents: true })}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+      {limited && edit ? null : (
+      <>
       <div className="list">
         {!edit && (
           <div className="field">
@@ -62,6 +87,8 @@ export function BudgetItemSheet({ edit, onClose }: { edit?: CycleEnvelope; onClo
       </p>
       <button className="btn primary block" onClick={save} disabled={!valid}>Сохранить</button>
       {edit && <button className="btn danger block" style={{ marginTop: 8 }} onClick={remove}>Убрать статью</button>}
+      </>
+      )}
     </Sheet>
   )
 }

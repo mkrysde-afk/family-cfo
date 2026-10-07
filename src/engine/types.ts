@@ -209,6 +209,8 @@ export interface Settings {
   envelopeOverrides?: Record<string, Cents>
   /** Устарело: розовый стал темой. Оставлено для чтения старых копий. */
   accent?: 'blue' | 'pink'
+  /** наличные уже разделены по людям (одноразовый перенос) */
+  cashSplit?: boolean
   /** Периоды, за которые история операций полная (выписки) */
   coverage: Coverage[]
   /** С этой даты операции вводятся вручную */

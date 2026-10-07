@@ -16,6 +16,9 @@ export interface PersonBudget {
   incomeMonth: Cents
   /** остаток карты известен неточно */
   uncertain: boolean
+  /** деньги сейчас: на картах и наличными */
+  onCards: Cents
+  inCash: Cents
 }
 
 export interface PeopleBudget {
@@ -49,7 +52,8 @@ export function peopleBudget(data: AppData, todayISO: ISODate): PeopleBudget {
       const incomeMonth = data.transactions
         .filter((t) => t.type === 'income' && t.status === 'posted' && t.owner === member.id && t.date >= from && t.date <= todayISO)
         .reduce((s, t) => s + t.amount, 0)
-      return { member, accounts, ...sumFor(accounts), incomeMonth, uncertain: accounts.some((a) => a.balanceConfidence === 'low') }
+      const bal = (kind: string) => accounts.filter((a) => a.kind === kind).reduce((s, a) => s + accountBalance(a, data.transactions, todayISO), 0)
+      return { member, accounts, ...sumFor(accounts), incomeMonth, uncertain: accounts.some((a) => a.balanceConfidence === 'low'), onCards: bal('bank'), inCash: bal('cash') }
     })
   const sharedAccs = spendable.filter((a) => !data.members.some((m) => !m.isFamily && m.id === a.owner))
   const sh = sumFor(sharedAccs)

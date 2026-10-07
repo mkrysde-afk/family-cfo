@@ -1,6 +1,6 @@
 import { availableToSpend, type AvailableBreakdown } from './available'
 import { moneyPlan } from './plan'
-import type { AppData, BudgetItem, Category, Cents, ISODate } from './types'
+import type { AppData, BudgetItem, Category, Cents, ISODate, Transaction } from './types'
 
 /** Статьи по умолчанию: продукты и авто/бензин — их нужно держать в резерве сразу */
 export const DEFAULT_ITEM_CATEGORIES = ['groceries', 'car']
@@ -17,6 +17,8 @@ export interface CycleEnvelope {
   left: Cents
   /** рекомендация CFO на период */
   suggested: Cents
+  /** траты, из которых сложилось «потрачено» (новые сверху) */
+  txs: Transaction[]
 }
 
 export interface FreeBudget {
@@ -48,12 +50,13 @@ export function freeBudget(data: AppData, todayISO: ISODate): FreeBudget {
     const category = data.categories.find((c) => c.id === item.categoryId)
     if (!category) continue
     const ids = new Set([category.id, ...data.categories.filter((c) => c.mergeInto === category.id).map((c) => c.id)])
-    const spent = data.transactions
+    const txs = data.transactions
       .filter((t) => t.type === 'expense' && t.status === 'posted' && t.categoryId && ids.has(t.categoryId) && t.date >= start && t.date <= todayISO)
-      .reduce((s, t) => s + t.amount, 0)
+      .sort((a, b) => b.date.localeCompare(a.date))
+    const spent = txs.reduce((s, t) => s + t.amount, 0)
     const suggested = Math.round((plan.envelopes.find((e) => e.category.id === category.id)?.limit ?? 0) / 1000) * 1000
     const amount = item.amount ?? suggested
-    envelopes.push({ category, amount, manual: item.amount !== null, spent, left: amount - spent, suggested })
+    envelopes.push({ category, amount, manual: item.amount !== null, spent, left: amount - spent, suggested, txs })
   }
   const inEnvelopes = envelopes.reduce((s, e) => s + Math.max(e.left, 0), 0)
   return { breakdown, envelopes, inEnvelopes, free: breakdown.available - inEnvelopes }

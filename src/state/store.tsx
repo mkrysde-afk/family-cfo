@@ -4,6 +4,7 @@ import {
   availableToSpend,
   effectOn,
   learnRule,
+  splitCashPerPerson,
   dueOccurrences,
   mergeData,
   type MergeStats,
@@ -53,6 +54,8 @@ interface Store {
   deleteGoal: (id: string) => void
   contributeGoal: (id: string, amount: Cents) => void
   saveAccount: (a: Account) => void
+  /** удалить источник денег совсем (история операций остаётся) */
+  deleteAccount: (id: string) => void
   setAccountBalance: (id: string, amount: Cents) => void
   saveCategory: (c: Category) => void
   renameMember: (id: string, name: string) => void
@@ -233,6 +236,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [setCfg, scheduleSync],
   )
 
+  // Одноразовый перенос: личные наличные у каждого члена семьи
+  useEffect(() => {
+    if (!data || data.settings.cashSplit) return
+    update((d) => splitCashPerPerson(d, today, new Date().toISOString()))
+  }, [data, today, update])
+
   // Ежедневный снимок «Можно потратить» для блока «Что изменилось»
   useEffect(() => {
     if (!data) return
@@ -295,6 +304,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           goals: d.goals.map((g) => (g.id === id ? stamp({ ...g, current: Math.max(g.current + amount, 0), contributions: [...(g.contributions ?? []), { id: newId('c'), date: today, amount }] }) : g)),
         })),
       saveAccount: (a) => update((d) => ({ ...d, accounts: upsert(d.accounts, a) })),
+      deleteAccount: (id) => update((d) => ({ ...d, accounts: d.accounts.filter((a) => a.id !== id), deleted: tombstone(d, id) })),
       // Остаток «сейчас»: якорь ставится на конец вчерашнего дня с учётом сегодняшних операций,
       // чтобы операции, введённые сегодня позже, продолжали менять баланс.
       setAccountBalance: (id, amount) =>

@@ -70,7 +70,7 @@ export function Transactions() {
   }
 
   function txTitle(t: Transaction) {
-    if (t.type === 'transfer') return `${acc(t.fromAccountId)?.name ?? '?'} → ${acc(t.toAccountId)?.name ?? '?'}`
+    if (t.type === 'transfer') return `${acc(t.fromAccountId)?.name ?? 'удалённый счёт'} → ${acc(t.toAccountId)?.name ?? 'удалённый счёт'}`
     return t.description || cat(t.categoryId)?.name || 'Операция'
   }
 
@@ -81,7 +81,7 @@ export function Transactions() {
     return (
       <button className="list-item" onClick={() => setEditing(t)}>
         <span className="icon-circle" style={{ background: t.type === 'transfer' ? 'var(--text-3)' : c?.color ?? '#999', fontSize: 13 }}>
-          {t.type === 'transfer' ? '⇄' : (c?.name ?? '?').slice(0, 1)}
+          {t.type === 'transfer' ? '⇄' : (c?.name ?? 'удалённый счёт').slice(0, 1)}
         </span>
         <div className="grow">
           <div className="title ellipsis">{txTitle(t)}</div>
