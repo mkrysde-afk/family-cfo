@@ -6,10 +6,12 @@ import { Segmented, Sheet, Switch, useToast } from './common'
 /** Создание / редактирование регулярного платежа */
 export function RecurringSheet({ edit, onClose }: { edit?: Recurring; onClose: () => void }) {
   const data = useData()
-  const { today, saveRecurring, deleteRecurring } = useStore()
+  const { today, saveRecurring, deleteRecurring, limited } = useStore()
   const toast = useToast()
-  const accounts = data.accounts.filter((a) => !a.archived)
-  const people = data.members.filter((m) => !m.isFamily)
+  const me = data.settings.me
+  // в упрощённом режиме — только свои платежи и только со своих карт
+  const accounts = data.accounts.filter((a) => !a.archived && (!limited || a.owner === me))
+  const people = data.members.filter((m) => !m.isFamily && (!limited || m.id === me))
 
   const [type, setType] = useState<Recurring['type']>(edit?.type ?? 'expense')
   const [name, setName] = useState(edit?.name ?? '')
@@ -17,7 +19,7 @@ export function RecurringSheet({ edit, onClose }: { edit?: Recurring; onClose: (
   const [categoryId, setCategoryId] = useState(edit?.categoryId ?? '')
   const [accountId, setAccountId] = useState(edit?.accountId ?? accounts[0]?.id)
   const [toAccountId, setToAccountId] = useState(edit?.toAccountId ?? accounts.find((a) => a.kind === 'savings')?.id ?? accounts[1]?.id)
-  const [owner, setOwner] = useState(edit?.owner ?? data.settings.me ?? people[0]?.id ?? 'family')
+  const [owner, setOwner] = useState(limited ? (me ?? 'family') : edit?.owner ?? me ?? people[0]?.id ?? 'family')
   const [frequency, setFrequency] = useState<Frequency>(edit?.frequency ?? 'monthly')
   const [startDate, setStartDate] = useState(edit?.startDate ?? today)
   const [endDate, setEndDate] = useState(edit?.endDate ?? '')
@@ -81,7 +83,7 @@ export function RecurringSheet({ edit, onClose }: { edit?: Recurring; onClose: (
           <label htmlFor="rw">Кто платит</label>
           <select id="rw" value={owner} onChange={(e) => setOwner(e.target.value)}>
             {people.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            <option value="family">Семья</option>
+            {!limited && <option value="family">Семья</option>}
           </select>
         </div>
       </div>

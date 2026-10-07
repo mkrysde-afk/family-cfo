@@ -84,8 +84,9 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense', plan:
         type,
         amount,
         categoryId: effectiveCategory!,
-        accountId: accountId!,
-        owner,
+        // в упрощённом режиме регулярный платёж — всегда свой и со своей карты
+        accountId: limited && data.accounts.find((x) => x.id === accountId)?.owner !== data.settings.me ? (data.accounts.find((x) => x.owner === data.settings.me && !x.archived)?.id ?? accountId!) : accountId!,
+        owner: limited ? (data.settings.me ?? owner) : owner,
         scope: effectiveScope,
         frequency,
         startDate: date,
@@ -236,7 +237,7 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense', plan:
             <label htmlFor="note">Заметка</label>
             <input id="note" placeholder="Необязательно" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
-          {!edit && !plan && !limited && (
+          {!edit && !plan && (
             <div className="field">
               <label>Повторять</label>
               <span className="grow" />

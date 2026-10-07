@@ -183,7 +183,7 @@ export function Transactions() {
         </>
       ) : (
         <>
-          {!limited && <button className="btn primary block" style={{ marginBottom: 12 }} onClick={() => setEditingRec('new')}>Добавить регулярный платёж</button>}
+          <button className="btn primary block" style={{ marginBottom: 12 }} onClick={() => setEditingRec('new')}>{limited ? 'Добавить свой регулярный платёж' : 'Добавить регулярный платёж'}</button>
           {[...data.members.filter((m) => !m.isFamily).sort((a, b) => Number(b.id === me) - Number(a.id === me)), ...data.members.filter((m) => m.isFamily)].map((m) => {
             const items = data.recurring
               .filter((r) => ownerOf(r.owner, r.accountId) === m.id)
@@ -198,7 +198,7 @@ export function Transactions() {
                 </div>
                 <div className="list">
                   {items.map((r) => (
-                    <button className="list-item" key={r.id} onClick={() => !limited && setEditingRec(r)} style={{ opacity: r.active ? 1 : 0.5 }}>
+                    <button className="list-item" key={r.id} onClick={() => (!limited || ownerOf(r.owner, r.accountId) === me ? setEditingRec(r) : toast('Изменить этот платёж можно на основном телефоне'))} style={{ opacity: r.active ? 1 : 0.5 }}>
                       <span className="dot" style={{ background: r.type === 'income' ? 'var(--good)' : r.type === 'transfer' ? 'var(--text-3)' : cat(r.categoryId)?.color }} />
                       <div className="grow">
                         <div className="title ellipsis">{r.name}</div>
