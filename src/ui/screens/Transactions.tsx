@@ -10,7 +10,6 @@ import {
   monthKey,
   monthName,
   occurrences,
-  parseAmount,
   type Occurrence,
   type Recurring,
   type Transaction,
@@ -19,12 +18,18 @@ import { useData, useStore } from '../../state/store'
 import { ConfBadge, Icons, Segmented, useLookups, useToast } from '../components/common'
 import { RecurringSheet } from '../components/RecurringSheet'
 import { TransactionSheet } from '../components/TransactionSheet'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 
 type Filter = 'all' | 'expense' | 'income' | 'transfer'
 
 export function Transactions() {
   const data = useData()
-  const { today, confirmOccurrence, skipOccurrence, confirmPending } = useStore()
+  const { today, confirmOccurrence, skipOccurrence, confirmPending, limited } = useStore()
+  const me = data.settings.me
+  // чей платёж: владелец, а если «Семья» — владелец карты
+  const ownerOf = (owner: string, accountId?: string) => (data.members.some((m) => m.id === owner && !m.isFamily) ? owner : data.accounts.find((a) => a.id === accountId)?.owner ?? owner)
+  const canConfirm = (owner: string, accountId?: string) => !limited || ownerOf(owner, accountId) === me
+  const [confirming, setConfirming] = useState<{ label: string; date: string; amount: number; income: boolean; run: (a: number) => void } | null>(null)
   const toast = useToast()
   const { cat, acc, mem } = useLookups(data)
   const [tab, setTab] = useState<'list' | 'recurring'>('list')
@@ -60,13 +65,8 @@ export function Transactions() {
   const sumExp = list.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
   const sumInc = list.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
 
-  function confirmWithAmount(o: Occurrence) {
-    const input = prompt(`Сумма списания «${o.recurring.name}»`, (o.recurring.amount / 100).toFixed(2).replace('.', ','))
-    if (input === null) return
-    const amount = parseAmount(input)
-    if (!amount) return toast('Неверная сумма')
-    confirmOccurrence(o, amount)
-    toast('Подтверждено')
+  function confirmOcc(o: Occurrence) {
+    setConfirming({ label: o.recurring.name, date: o.date, amount: o.recurring.amount, income: o.recurring.type === 'income', run: (a) => { confirmOccurrence(o, a); toast('Подтверждено') } })
   }
 
   function txTitle(t: Transaction) {
@@ -117,20 +117,24 @@ export function Transactions() {
                       <div className="sub">{formatDate(t.date)} · {t.status === 'pending' ? 'ожидает списания в банке' : 'запланировано'}</div>
                     </div>
                     <span className="num">{eur(t.amount, { cents: true })}</span>
-                    <button className="btn small primary" onClick={() => { confirmPending(t.id); toast('Проведено') }}>Прошло</button>
+                    {canConfirm(t.owner, t.accountId) && (
+                      <button className="btn small primary" onClick={() => setConfirming({ label: t.description, date: t.date, amount: t.amount, income: t.type === 'income', run: (a) => { confirmPending(t.id, a); toast('Проведено') } })}>Прошло</button>
+                    )}
                   </div>
                 ))}
                 {due.map((o) => (
                   <div className="list-item" key={o.recurring.id + o.date}>
                     <div className="grow">
                       <div className="title ellipsis">{o.recurring.name}</div>
-                      <div className="sub">{formatDate(o.date)} · {o.recurring.type === 'income' ? 'поступление' : 'списание'} · <button className="linklike" onClick={() => confirmWithAmount(o)}>другая сумма</button></div>
+                      <div className="sub">{formatDate(o.date)} · {o.recurring.type === 'income' ? 'поступление' : 'списание'} · <span style={{ color: mem(ownerOf(o.recurring.owner, o.recurring.accountId))?.color }}>{mem(ownerOf(o.recurring.owner, o.recurring.accountId))?.name}</span></div>
                     </div>
                     <span className={`num ${o.recurring.type === 'income' ? 'good' : ''}`}>{eur(o.recurring.amount, { cents: true })}</span>
-                    <div className="row" style={{ gap: 6 }}>
-                      <button className="btn small" aria-label="Не было" onClick={() => { skipOccurrence(o); toast('Пропущено') }}>Нет</button>
-                      <button className="btn small primary" onClick={() => { confirmOccurrence(o); toast('Подтверждено') }}>Да</button>
-                    </div>
+                    {canConfirm(o.recurring.owner, o.recurring.accountId) && (
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="btn small" aria-label="Не было" onClick={() => { skipOccurrence(o); toast('Пропущено') }}>Нет</button>
+                        <button className="btn small primary" onClick={() => confirmOcc(o)}>Да</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -179,27 +183,33 @@ export function Transactions() {
         </>
       ) : (
         <>
-          <button className="btn primary block" style={{ marginBottom: 12 }} onClick={() => setEditingRec('new')}>Добавить регулярный платёж</button>
-          {(['income', 'expense', 'transfer'] as const).map((type) => {
-            const items = data.recurring.filter((r) => r.type === type).sort((a, b) => Number(b.active) - Number(a.active) || annualCost(b) - annualCost(a))
+          {!limited && <button className="btn primary block" style={{ marginBottom: 12 }} onClick={() => setEditingRec('new')}>Добавить регулярный платёж</button>}
+          {[...data.members.filter((m) => !m.isFamily).sort((a, b) => Number(b.id === me) - Number(a.id === me)), ...data.members.filter((m) => m.isFamily)].map((m) => {
+            const items = data.recurring
+              .filter((r) => ownerOf(r.owner, r.accountId) === m.id)
+              .sort((a, b) => Number(b.active) - Number(a.active) || Number(a.type !== 'income') - Number(b.type !== 'income') || Number(a.startDate.slice(8)) - Number(b.startDate.slice(8)))
             if (!items.length) return null
+            const monthly = items.filter((r) => r.active && r.type === 'expense').reduce((s, r) => s + Math.round(annualCost(r) / 12), 0)
             return (
-              <div key={type}>
-                <div className="section-title">{type === 'income' ? 'Поступления' : type === 'expense' ? 'Списания' : 'Переводы в накопления'}</div>
+              <div key={m.id}>
+                <div className="section-title row" style={{ color: m.isFamily ? undefined : m.color }}>
+                  <span>{m.name}</span>
+                  <span style={{ textTransform: 'none' }}>≈ {eur(monthly)}/мес</span>
+                </div>
                 <div className="list">
                   {items.map((r) => (
-                    <button className="list-item" key={r.id} onClick={() => setEditingRec(r)} style={{ opacity: r.active ? 1 : 0.5 }}>
-                      <span className="dot" style={{ background: r.type === 'transfer' ? 'var(--text-3)' : cat(r.categoryId)?.color }} />
+                    <button className="list-item" key={r.id} onClick={() => !limited && setEditingRec(r)} style={{ opacity: r.active ? 1 : 0.5 }}>
+                      <span className="dot" style={{ background: r.type === 'income' ? 'var(--good)' : r.type === 'transfer' ? 'var(--text-3)' : cat(r.categoryId)?.color }} />
                       <div className="grow">
                         <div className="title ellipsis">{r.name}</div>
                         <div className="sub ellipsis">
-                          {FREQ_LABEL[r.frequency]}, {Number(r.startDate.slice(8))}-го · {acc(r.accountId)?.name}
+                          {Number(r.startDate.slice(8))}-го · {FREQ_LABEL[r.frequency]} · {acc(r.accountId)?.name}
                           {!r.active && ' · отключён'}
                           {r.endDate && ` · до ${formatDate(r.endDate, true)}`}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div className={`num ${r.type === 'income' ? 'good' : ''}`}>{eur(r.amount, { cents: true })}</div>
+                        <div className={`num ${r.type === 'income' ? 'good' : ''}`}>{r.type === 'income' ? '+' : ''}{eur(r.amount, { cents: true })}</div>
                         {r.confidence !== 'high' && <ConfBadge c={r.confidence} short />}
                       </div>
                     </button>
@@ -212,6 +222,9 @@ export function Transactions() {
       )}
 
       {editing && <TransactionSheet edit={editing} onClose={() => setEditing(null)} />}
+      {confirming && (
+        <ConfirmSheet label={confirming.label} date={confirming.date} expected={confirming.amount} income={confirming.income} onConfirm={confirming.run} onClose={() => setConfirming(null)} />
+      )}
       {editingRec && <RecurringSheet edit={editingRec === 'new' ? undefined : editingRec} onClose={() => setEditingRec(null)} />}
     </>
   )

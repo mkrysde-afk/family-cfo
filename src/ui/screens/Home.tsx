@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   freeBudget,
   type CycleEnvelope,
+  type MandatoryItem,
   cfoInsights,
   addDays,
   obligationsUntil,
@@ -17,13 +18,14 @@ import { useData, useStore } from '../../state/store'
 import { Icons, useLookups, useToast } from '../components/common'
 import { TransactionSheet } from '../components/TransactionSheet'
 import { BudgetItemSheet } from '../components/BudgetItemSheet'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { Route } from '../App'
 import { ago } from './Sync'
 
 /** Главный экран — минимум: общий бюджет, двое, запланированное, обязательное, один совет, последние операции */
 export function Home({ go }: { go: (r: Route) => void }) {
   const data = useData()
-  const { today, sync, confirmPending, confirmOccurrence, confirmAllPast } = useStore()
+  const { today, sync, confirmPending, confirmOccurrence, confirmAllPast, limited } = useStore()
   const toast = useToast()
   const { cat, mem } = useLookups(data)
   const [editing, setEditing] = useState<Transaction | null>(null)
@@ -58,7 +60,6 @@ export function Home({ go }: { go: (r: Route) => void }) {
   )
   const unpaid = mandatory.filter((m) => m.state !== 'paid' && !m.income)
   const unpaidSum = unpaid.reduce((s, m) => s + m.amount, 0)
-  const incoming = mandatory.filter((m) => m.income)
   const pastDue = mandatory.filter((m) => !m.income && (m.state === 'due' || m.state === 'pending'))
   const pastTransfers = due.filter((o) => o.recurring.type === 'transfer')
 
@@ -75,16 +76,26 @@ export function Home({ go }: { go: (r: Route) => void }) {
     toast(`«${t.description}» — потрачено`)
   }
 
-  function confirmMandatory(key: string) {
-    const o = due.find((d) => `${d.recurring.id}|${d.date}` === key)
-    if (o) {
-      confirmOccurrence(o)
-      toast(`«${o.recurring.name}» — ${o.recurring.type === 'income' ? 'получено' : 'оплачено'}`)
-      return
-    }
-    confirmPending(key)
-    toast('Списание подтверждено')
+  const [confirming, setConfirming] = useState<MandatoryItem | null>(null)
+  const me = data.settings.me
+  /** в упрощённом режиме можно подтверждать только свои платежи */
+  const canConfirm = (m: MandatoryItem) => !limited || m.owner === me
+
+  function confirmMandatory(m: MandatoryItem, amount: number) {
+    const o = due.find((d) => `${d.recurring.id}|${d.date}` === m.key)
+    if (o) confirmOccurrence(o, amount)
+    else confirmPending(m.key, amount)
+    toast(`«${m.label}» — ${m.income ? 'получено' : 'оплачено'} ${eur(amount, { cents: true })}`)
   }
+
+  // Группы по людям: сначала тот, чей это телефон
+  const groups = useMemo(() => {
+    const order = [...data.members.filter((x) => !x.isFamily)].sort((a, b) => Number(b.id === me) - Number(a.id === me))
+    const ids = [...order.map((x) => x.id), ...new Set(mandatory.map((x) => x.owner).filter((o) => !order.some((p) => p.id === o)))]
+    return ids
+      .map((id) => ({ member: mem(id), items: mandatory.filter((x) => x.owner === id) }))
+      .filter((g) => g.items.length > 0)
+  }, [data.members, mandatory, me, mem])
 
   const whenLabel = (d: string) => (d === today ? 'сегодня' : d < today ? 'просрочено' : formatDate(d))
   const txTitle = (t: Transaction) =>
@@ -133,7 +144,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
 
       {/* Статьи бюджета */}
       {fb.envelopes.map((e) => (
-        <button key={e.category.id} className="card" style={{ width: '100%', border: 0, textAlign: 'left', display: 'block', padding: '11px 14px', marginBottom: 8 }} onClick={() => setItemEdit(e)}>
+        <button key={e.category.id} className="card" style={{ width: '100%', border: 0, textAlign: 'left', display: 'block', padding: '11px 14px', marginBottom: 8 }} onClick={() => !limited && setItemEdit(e)}>
           <div className="row">
             <span style={{ fontWeight: 600 }}>{e.category.name}</span>
             <b className={`num ${e.left < 0 ? 'bad' : ''}`}>{e.left < 0 ? `перерасход ${eur(-e.left)}` : eur(e.left)}</b>
@@ -147,7 +158,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
           </div>
         </button>
       ))}
-      <button className="linklike small" style={{ display: 'block', margin: '0 auto 14px' }} onClick={() => setItemEdit('new')}>+ статья</button>
+      {!limited && <button className="linklike small" style={{ display: 'block', margin: '0 auto 14px' }} onClick={() => setItemEdit('new')}>+ статья</button>}
 
       {cycle.salaryLate && (
         <button className="banner warn" onClick={() => go('tx')}>
@@ -191,8 +202,12 @@ export function Home({ go }: { go: (r: Route) => void }) {
             const when = whenLabel(t.date)
             return (
               <div key={t.id} className="row" style={{ padding: '6px 0' }}>
-                <button aria-label={`Отметить «${t.description}» потраченным`} onClick={() => tick(t)}
-                  style={{ width: 24, height: 24, borderRadius: 12, border: '2px solid var(--text-3)', background: 'none', flex: 'none', padding: 0 }} />
+                {!limited || t.owner === me ? (
+                  <button aria-label={`Отметить «${t.description}» потраченным`} onClick={() => tick(t)}
+                    style={{ width: 24, height: 24, borderRadius: 12, border: '2px solid var(--text-3)', background: 'none', flex: 'none', padding: 0 }} />
+                ) : (
+                  <span style={{ width: 24, flex: 'none' }} />
+                )}
                 <button className="grow" style={{ background: 'none', border: 0, padding: 0, textAlign: 'left' }} onClick={() => setEditing(t)}>
                   <div className="ellipsis">{t.description}</div>
                   <div className="tiny" style={{ color: when === 'просрочено' ? 'var(--bad)' : when === 'сегодня' ? 'var(--accent)' : 'var(--text-2)' }}>
@@ -214,20 +229,38 @@ export function Home({ go }: { go: (r: Route) => void }) {
             <span className="card-title">Платежи до зарплаты</span>
             <span className="small muted num" style={{ whiteSpace: 'nowrap' }}>{unpaid.length ? `ещё ${eur(unpaidSum)}` : 'всё оплачено'}</span>
           </div>
-          {[...incoming, ...unpaid.slice(0, 6), ...mandatory.filter((m) => m.state === 'paid').slice(0, Math.max(0, 6 - unpaid.length))].map((m) => (
-            <div key={m.key} className="row" style={{ padding: '6px 0' }}>
-              <span className="grow" style={{ minWidth: 0 }}>
-                <span className="ellipsis" style={{ display: 'block' }}>{m.label}</span>
-                <span className="tiny" style={{ color: m.state === 'paid' ? 'var(--good)' : m.state === 'upcoming' ? 'var(--text-2)' : m.income ? 'var(--good)' : 'var(--warn)' }}>
-                  {formatDate(m.date)} · {m.state === 'paid' ? 'оплачено ✓' : m.state === 'upcoming' ? 'впереди' : m.income ? 'пришло?' : m.state === 'pending' ? 'ждёт списания' : 'списалось?'}
-                </span>
-              </span>
-              <span className={`num ${m.income ? 'good' : m.state === 'paid' ? 'faint' : ''}`}>{m.income ? '+' : ''}{eur(m.amount, { cents: m.amount % 100 !== 0 })}</span>
-              {(m.state === 'due' || m.state === 'pending') && (
-                <button className="btn small primary" aria-label={m.income ? 'Подтвердить поступление' : 'Подтвердить списание'} onClick={() => confirmMandatory(m.key)}>✓</button>
-              )}
-            </div>
-          ))}
+          {groups.map((g) => {
+            const open = g.items.filter((x) => x.state !== 'paid')
+            const paid = g.items.filter((x) => x.state === 'paid')
+            const color = g.member && !g.member.isFamily ? g.member.color : 'var(--text-2)'
+            return (
+              <div key={g.member?.id ?? 'other'} style={{ marginTop: 6 }}>
+                <div className="row tiny" style={{ textTransform: 'uppercase', letterSpacing: '0.04em', color, fontWeight: 600, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
+                  <span>{g.member?.name ?? 'Семья'}</span>
+                  <span className="num" style={{ textTransform: 'none' }}>{open.filter((x) => !x.income).length ? `ещё ${eur(open.filter((x) => !x.income).reduce((s, x) => s + x.amount, 0))}` : ''}</span>
+                </div>
+                {open.map((m) => (
+                  <div key={m.key} className="row" style={{ padding: '6px 0' }}>
+                    <span className="grow" style={{ minWidth: 0 }}>
+                      <span className="ellipsis" style={{ display: 'block' }}>{m.label}</span>
+                      <span className="tiny" style={{ color: m.state === 'upcoming' ? 'var(--text-2)' : m.income ? 'var(--good)' : 'var(--warn)' }}>
+                        {formatDate(m.date)} · {m.state === 'upcoming' ? 'впереди' : m.income ? 'пришло?' : m.state === 'pending' ? 'ждёт списания' : 'списалось?'}
+                      </span>
+                    </span>
+                    <span className={`num ${m.income ? 'good' : ''}`}>{m.income ? '+' : ''}{eur(m.amount, { cents: m.amount % 100 !== 0 })}</span>
+                    {(m.state === 'due' || m.state === 'pending') && canConfirm(m) && (
+                      <button className="btn small primary" aria-label={m.income ? 'Подтвердить поступление' : 'Подтвердить списание'} onClick={() => setConfirming(m)}>✓</button>
+                    )}
+                  </div>
+                ))}
+                {paid.length > 0 && (
+                  <div className="tiny good" style={{ padding: '4px 0' }}>
+                    оплачено: {paid.map((x) => x.label).join(', ')} ✓
+                  </div>
+                )}
+              </div>
+            )
+          })}
           {afterPayday.length > 0 && (
             <div className="tiny muted" style={{ marginTop: 6 }}>
               Из новой зарплаты в первую неделю: {[...afterPayday].sort((x, y) => y.amount - x.amount).slice(0, 3).map((o) => `${o.label} ${eur(o.amount)}`).join(', ')}
@@ -236,7 +269,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
           )}
           <div className="row" style={{ marginTop: 6 }}>
             <button className="linklike small" onClick={() => go('tx')}>все платежи ›</button>
-            {pastDue.length + pastTransfers.length > 1 && (
+            {!limited && pastDue.length + pastTransfers.length > 1 && (
               <button className="btn small" onClick={confirmAll}>✓ Отметить всё прошедшее</button>
             )}
           </div>
@@ -279,6 +312,10 @@ export function Home({ go }: { go: (r: Route) => void }) {
 
       {editing && <TransactionSheet edit={editing} onClose={() => setEditing(null)} />}
       {planning && <TransactionSheet plan onClose={() => setPlanning(false)} />}
+      {confirming && (
+        <ConfirmSheet label={confirming.label} date={confirming.date} expected={confirming.amount} income={confirming.income}
+          onConfirm={(amount) => confirmMandatory(confirming, amount)} onClose={() => setConfirming(null)} />
+      )}
       {itemEdit && <BudgetItemSheet edit={itemEdit === 'new' ? undefined : itemEdit} onClose={() => setItemEdit(null)} />}
     </>
   )

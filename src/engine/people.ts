@@ -66,6 +66,8 @@ export interface MandatoryItem {
   state: MandatoryState
   /** поступление (зарплата, Kindergeld), ждущее подтверждения */
   income?: boolean
+  /** чей платёж: владелец регулярной операции или счёта */
+  owner: string
   recurringId?: string
   txId?: string
 }
@@ -77,11 +79,16 @@ export interface MandatoryItem {
 export function monthMandatory(data: AppData, todayISO: ISODate): MandatoryItem[] {
   const cycle = payCycle(data, todayISO)
   const items: MandatoryItem[] = []
+  // чей платёж: если записан на «Семью», смотрим, с чьей карты он идёт
+  const ownerOf = (owner: string, accountId?: string) => {
+    if (data.members.some((m) => m.id === owner && !m.isFamily)) return owner
+    return data.accounts.find((a) => a.id === accountId)?.owner ?? owner
+  }
   for (const o of occurrences(data, data.settings.trackingStart, cycle.horizon, todayISO)) {
     if (o.state === 'skipped' || o.recurring.type === 'transfer') continue
     const thisMonth = o.date >= cycle.start
     if (o.recurring.type === 'income') {
-      if (o.state === 'due') items.push({ key: `${o.recurring.id}|${o.date}`, label: o.recurring.name, date: o.date, amount: o.recurring.amount, state: 'due', income: true, recurringId: o.recurring.id })
+      if (o.state === 'due') items.push({ key: `${o.recurring.id}|${o.date}`, label: o.recurring.name, date: o.date, amount: o.recurring.amount, state: 'due', income: true, recurringId: o.recurring.id, owner: ownerOf(o.recurring.owner, o.recurring.accountId) })
       continue
     }
     if (!thisMonth && o.state !== 'due') continue
@@ -92,11 +99,12 @@ export function monthMandatory(data: AppData, todayISO: ISODate): MandatoryItem[
       amount: o.tx?.amount ?? o.recurring.amount,
       state: o.state === 'done' ? 'paid' : o.state === 'due' ? 'due' : 'upcoming',
       recurringId: o.recurring.id,
+      owner: ownerOf(o.recurring.owner, o.recurring.accountId),
     })
   }
   for (const t of data.transactions) {
     if (t.status !== 'pending' || t.type === 'transfer' || t.date > cycle.horizon) continue
-    items.push({ key: t.id, label: t.description, date: t.date, amount: t.amount, state: 'pending', txId: t.id, income: t.type === 'income' })
+    items.push({ key: t.id, label: t.description, date: t.date, amount: t.amount, state: 'pending', txId: t.id, income: t.type === 'income', owner: ownerOf(t.owner, t.accountId) })
   }
   const order: Record<MandatoryState, number> = { due: 0, pending: 1, upcoming: 2, paid: 3 }
   return items.sort((a, b) => order[a.state] - order[b.state] || a.date.localeCompare(b.date))

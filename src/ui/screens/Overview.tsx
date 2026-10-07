@@ -32,7 +32,7 @@ export function MonthOverview({ go }: { go: (r: Route) => void }) {
 
   const av = useMemo(() => availableToSpend(data, today), [data, today])
   const plan = useMemo(() => allowances(data, today), [data, today])
-  const { contributeGoal } = useStore()
+  const { contributeGoal, limited } = useStore()
   const toast = useToast()
   const curMonth = monthKey(today)
   const debtGoal = data.goals.find((g) => g.debtId)
@@ -127,7 +127,7 @@ export function MonthOverview({ go }: { go: (r: Route) => void }) {
               <span className="num">{eur(g.done)} из <b>{eur(g.target)}</b></span>
             </div>
             <Bar value={g.done} max={Math.max(g.target, 1)} color="var(--good)" />
-            {g.goal && g.done < g.target && (
+            {!limited && g.goal && g.done < g.target && (
               <button className="linklike tiny" style={{ marginTop: 4 }} onClick={() => setAside(g.goal!.id, g.target - g.done, g.label)}>
                 Отложить {eur(g.target - g.done)} ›
               </button>

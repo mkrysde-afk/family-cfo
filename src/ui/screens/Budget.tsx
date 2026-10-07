@@ -5,7 +5,7 @@ import { Bar, useToast } from '../components/common'
 
 export function Budget() {
   const data = useData()
-  const { today, updateSettings } = useStore()
+  const { today, updateSettings, limited } = useStore()
   const toast = useToast()
   const b = useMemo(() => buildBudget(data, today), [data, today])
   const m = b.money
@@ -53,18 +53,18 @@ export function Budget() {
         <div className="row" style={{ marginTop: 6 }}><span>2. Необходимое</span><span className="num">{eur(m.needs)}</span></div>
         <div className="row"><span>3. Желания</span><span className="num">{eur(m.wants)}</span></div>
         {m.shortfall > 0 && <p className="small bad" style={{ marginBottom: 0 }}>План не сходится на {eur(m.shortfall)} — уменьшите конверты.</p>}
-        <div className="divider" />
-        <label className="small muted" htmlFor="target">В подушку в месяц, € (пусто — считает приложение)</label>
-        <div className="row" style={{ marginTop: 6 }}>
+        {!limited && <div className="divider" />}
+        {!limited && <label className="small muted" htmlFor="target">В подушку в месяц, € (пусто — считает приложение)</label>}
+        {!limited && <div className="row" style={{ marginTop: 6 }}>
           <input id="target" className="input" inputMode="decimal" placeholder={`авто: ${(m.cushion / 100).toFixed(0)}`} value={target} onChange={(e) => setTarget(e.target.value.replace(/[^\d.,]/g, ''))} />
           <button className="btn small primary" onClick={saveTarget}>Сохранить</button>
-        </div>
+        </div>}
       </div>
 
       <div className="section-title">Конверты на месяц</div>
       <div className="list">
         {m.envelopes.map((e) => (
-          <button className="list-item" key={e.category.id} onClick={() => editEnvelope(e.category.id, e.category.name, e.limit, e.overridden)}>
+          <button className="list-item" key={e.category.id} onClick={() => !limited && editEnvelope(e.category.id, e.category.name, e.limit, e.overridden)}>
             <span className="dot" style={{ background: e.category.color }} />
             <div className="grow">
               <div className="title ellipsis">{e.category.name}</div>

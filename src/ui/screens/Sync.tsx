@@ -24,7 +24,7 @@ const STATUS: Record<string, string> = {
 
 export function Sync() {
   const data = useData()
-  const { updateSettings, syncWith, sync, connectSync, disconnectSync, syncNow } = useStore()
+  const { updateSettings, syncWith, sync, connectSync, disconnectSync, syncNow, limited } = useStore()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [result, setResult] = useState<MergeStats | null>(null)
@@ -50,7 +50,7 @@ export function Sync() {
       <div className="card">
         <div className="row" style={{ gap: 8 }}>
           {people.map((m) => (
-            <button key={m.id} className="btn grow" onClick={() => updateSettings({ me: m.id })}
+            <button key={m.id} className="btn grow" disabled={limited && data.settings.me !== m.id} onClick={() => !limited && updateSettings({ me: m.id })}
               style={data.settings.me === m.id ? { background: m.color, color: '#fff' } : undefined}>
               {m.name}
             </button>
@@ -69,9 +69,9 @@ export function Sync() {
           <div className="row small"><span className="muted">Хранилище</span><span className="ellipsis">{sync.repo} (закрытый, зашифровано)</span></div>
           {sync.error && <p className="small bad" style={{ margin: 0 }}>{sync.error}</p>}
           <button className="btn primary block" onClick={syncNow} disabled={sync.status === 'syncing'}>Синхронизировать сейчас</button>
-          <button className="btn block danger" onClick={() => { if (confirm('Отключить синхронизацию на этом телефоне? Данные на телефоне и в облаке останутся.')) disconnectSync() }}>
+          {!limited && <button className="btn block danger" onClick={() => { if (confirm('Отключить синхронизацию на этом телефоне? Данные на телефоне и в облаке останутся.')) disconnectSync() }}>
             Отключить на этом телефоне
-          </button>
+          </button>}
         </div>
       ) : (
         <div className="card">

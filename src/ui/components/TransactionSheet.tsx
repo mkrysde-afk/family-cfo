@@ -21,8 +21,10 @@ const TYPE_LABEL: [TxType, string][] = [
 /** Быстрое добавление / редактирование операции */
 export function TransactionSheet({ onClose, edit, initialType = 'expense', plan: planProp = false }: Props) {
   const data = useData()
-  const { today, addTransaction, updateTransaction, deleteTransaction, saveRecurring, confirmPending } = useStore()
+  const { today, addTransaction, updateTransaction, deleteTransaction, saveRecurring, confirmPending, limited } = useStore()
   const plan = planProp || edit?.status === 'planned'
+  // в упрощённом режиме чужие операции и записи из выписок только для просмотра
+  const readOnly = limited && !!edit && (edit.owner !== data.settings.me || edit.origin === 'statement' || edit.origin === 'recurring')
   const toast = useToast()
   const people = data.members.filter((m) => !m.isFamily)
   const accounts = data.accounts.filter((a) => !a.archived)
@@ -128,7 +130,8 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense', plan:
   }
 
   return (
-    <Sheet title={plan ? (edit ? 'Запланированная трата' : 'Запланировать трату') : edit ? 'Операция' : 'Новая операция'} onClose={onClose} onDone={save} doneDisabled={!canSave}>
+    <Sheet title={plan ? (edit ? 'Запланированная трата' : 'Запланировать трату') : edit ? 'Операция' : 'Новая операция'} onClose={onClose} onDone={readOnly ? undefined : save} doneDisabled={!canSave}>
+      {readOnly && <div className="banner" style={{ marginBottom: 10 }}>Только просмотр: эту операцию может изменить основной телефон.</div>}
       {!plan && <Segmented value={type} options={TYPE_LABEL} onChange={(t) => { setType(t); setCategoryId(undefined); setCategoryTouched(false) }} />}
       <input
         className="amount-input num"
@@ -233,7 +236,7 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense', plan:
             <label htmlFor="note">Заметка</label>
             <input id="note" placeholder="Необязательно" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
-          {!edit && !plan && (
+          {!edit && !plan && !limited && (
             <div className="field">
               <label>Повторять</label>
               <span className="grow" />
@@ -264,13 +267,13 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense', plan:
       </p>
       {error && <div className="error">{error}</div>}
 
-      <button className="btn primary block" onClick={save} disabled={!canSave}>{edit ? 'Сохранить' : plan ? 'Запланировать' : 'Добавить'}</button>
-      {edit && edit.status === 'planned' && (
+      {!readOnly && <button className="btn primary block" onClick={save} disabled={!canSave}>{edit ? 'Сохранить' : plan ? 'Запланировать' : 'Добавить'}</button>}
+      {!readOnly && edit && edit.status === 'planned' && (
         <button className="btn block" style={{ marginTop: 8 }} onClick={() => { confirmPending(edit.id); toast('Отмечено: потрачено'); onClose() }}>
           Потрачено ✓
         </button>
       )}
-      {edit && (
+      {edit && !readOnly && (
         <button className="btn danger block" style={{ marginTop: 8 }} onClick={() => { if (confirm('Удалить операцию?')) { deleteTransaction(edit.id); toast('Удалено'); onClose() } }}>
           Удалить операцию
         </button>

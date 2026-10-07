@@ -94,7 +94,61 @@ function CategorySheet({ edit, onClose }: { edit?: Category; onClose: () => void
   )
 }
 
+/** Упрощённый режим: только тема и разблокировка по PIN */
+function LimitedSettings() {
+  const data = useData()
+  const { updateSettings, disableLimited } = useStore()
+  const toast = useToast()
+  const [pin, setPin] = useState('')
+  return (
+    <>
+      <h1 className="page-title">Настройки</h1>
+      <div className="section-title">Оформление</div>
+      <div className="card">
+        <Segmented value={data.settings.theme} options={[['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная'], ['pink', 'Розовая']]} onChange={(theme) => updateSettings({ theme })} />
+      </div>
+      <div className="section-title">Упрощённый режим</div>
+      <div className="card stack">
+        <p className="small muted" style={{ margin: 0 }}>
+          На этом телефоне можно смотреть всё и вносить расходы, доходы и запланированные траты. Настройки, регулярные платежи,
+          статьи и цели меняются на основном телефоне.
+        </p>
+        <input className="input" type="password" inputMode="numeric" maxLength={4} placeholder="PIN, чтобы выключить" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+        <button className="btn block" onClick={async () => { if (await disableLimited(pin)) toast('Упрощённый режим выключен'); else { toast('Неверный PIN'); setPin('') } }} disabled={pin.length !== 4}>
+          Выключить упрощённый режим
+        </button>
+      </div>
+    </>
+  )
+}
+
 export function Settings() {
+  const { limited } = useStore()
+  return limited ? <LimitedSettings /> : <FullSettings />
+}
+
+function LimitedModeCard() {
+  const { enableLimited } = useStore()
+  const toast = useToast()
+  const [pin, setPin] = useState('')
+  const [pin2, setPin2] = useState('')
+  return (
+    <div className="card stack">
+      <p className="small muted" style={{ margin: 0 }}>
+        Для второго телефона: оставить только просмотр и ввод расходов, доходов и запланированного. Настройки, регулярные платежи,
+        статьи и цели будут недоступны. Выключить — только с PIN. Действует только на этом телефоне.
+      </p>
+      <input className="input" type="password" inputMode="numeric" maxLength={4} placeholder="Придумайте PIN (4 цифры)" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+      <input className="input" type="password" inputMode="numeric" maxLength={4} placeholder="Повторите PIN" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ''))} />
+      <button className="btn block primary" disabled={pin.length !== 4 || pin !== pin2}
+        onClick={async () => { await enableLimited(pin); toast('Упрощённый режим включён') }}>
+        Включить упрощённый режим
+      </button>
+    </div>
+  )
+}
+
+function FullSettings() {
   const data = useData()
   const store = useStore()
   const { today, updateSettings, renameMember, deleteRule, setData, reset } = store
@@ -221,6 +275,9 @@ export function Settings() {
           </div>
         </>
       )}
+
+      <div className="section-title">Упрощённый режим (для второго телефона)</div>
+      <LimitedModeCard />
 
       <div className="section-title">Опасная зона</div>
       <div className="card">

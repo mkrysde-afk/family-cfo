@@ -41,7 +41,7 @@ function GoalSheet({ edit, onClose }: { edit?: Goal; onClose: () => void }) {
 
 export function Goals() {
   const data = useData()
-  const { today, contributeGoal } = useStore()
+  const { today, contributeGoal, limited } = useStore()
   const toast = useToast()
   const ef = useMemo(() => emergencyFund(data, today), [data, today])
   const [editing, setEditing] = useState<Goal | 'new' | null>(null)
@@ -79,7 +79,7 @@ export function Goals() {
           <div className="card" key={g.id}>
             <div className="card-head">
               <span className="card-title">{g.name}</span>
-              <button className="linklike small" onClick={() => setEditing(g)}>Изменить</button>
+              {!limited && <button className="linklike small" onClick={() => setEditing(g)}>Изменить</button>}
             </div>
             <div className="row small"><span className="num"><b>{eur(g.current)}</b> из {eur(g.target)}</span><span className="muted num">{Math.round(p.progress * 100)}%</span></div>
             <div style={{ margin: '6px 0' }}><Bar value={g.current} max={g.target} color="var(--accent)" /></div>
@@ -94,13 +94,13 @@ export function Goals() {
             )}
             {g.note && <p className="tiny muted" style={{ margin: '4px 0' }}>{g.note}</p>}
             <div className="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 6 }}>
-              <button className="btn small primary" onClick={() => contribute(g)}>Отложить</button>
+              {!limited && <button className="btn small primary" onClick={() => contribute(g)}>Отложить</button>}
               {g.reserve && <span className="tiny muted">вычитается из «Можно потратить»</span>}
             </div>
           </div>
         )
       })}
-      <button className="btn block" onClick={() => setEditing('new')}>Добавить цель</button>
+      {!limited && <button className="btn block" onClick={() => setEditing('new')}>Добавить цель</button>}
 
       {data.debts.length > 0 && (
         <>

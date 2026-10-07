@@ -25,6 +25,7 @@ import { DEFAULT_PATH, fetchRemote, loadSyncConfig, refOf, saveSyncConfig, syncO
 import { WrongPasswordError } from '../sync/crypto'
 import { AuthError, checkRepo, NetworkError } from '../sync/github'
 import { requestPersistence, storage } from '../storage/storage'
+import { hashPin, loadDevicePrefs, saveDevicePrefs } from './device'
 
 export function newId(prefix = 'id'): string {
   const r = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 12) : Math.random().toString(36).slice(2, 14)
@@ -43,7 +44,7 @@ interface Store {
   deleteTransaction: (id: string) => void
   confirmOccurrence: (o: Occurrence, amount?: Cents, date?: ISODate) => void
   skipOccurrence: (o: Occurrence) => void
-  confirmPending: (id: string) => void
+  confirmPending: (id: string, amount?: Cents) => void
   /** Отметить прошедшими все наступившие обязательные платежи (без поступлений) */
   confirmAllPast: () => void
   saveRecurring: (r: Recurring) => void
@@ -64,6 +65,10 @@ interface Store {
   joinFamily: (c: ConnectParams) => Promise<void>
   disconnectSync: () => void
   syncNow: () => void
+  /** Упрощённый режим этого телефона: только просмотр и ввод операций */
+  limited: boolean
+  enableLimited: (pin: string) => Promise<void>
+  disableLimited: (pin: string) => Promise<boolean>
   reset: () => Promise<void>
 }
 
@@ -106,6 +111,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setDataState] = useState<AppData | null>(null)
   const [loading, setLoading] = useState(true)
   const [today, setToday] = useState(todayFn())
+  const [device, setDevice] = useState(loadDevicePrefs())
   const saveTimer = useRef<number | undefined>(undefined)
 
   // --- автосинхронизация ---
@@ -277,8 +283,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const txs = d.transactions.map((t) => (t.status === 'pending' && t.type !== 'income' && t.date <= today ? stamp({ ...t, status: 'posted' as const }) : t))
           return { ...d, transactions: [...txs, ...added] }
         }),
-      confirmPending: (id) =>
-        update((d) => ({ ...d, transactions: d.transactions.map((x) => (x.id === id ? stamp({ ...x, status: 'posted' as const, date: x.date < today ? x.date : today }) : x)) })),
+      confirmPending: (id, amount) =>
+        update((d) => ({ ...d, transactions: d.transactions.map((x) => (x.id === id ? stamp({ ...x, status: 'posted' as const, date: x.date < today ? x.date : today, ...(amount ? { amount } : {}) }) : x)) })),
       saveRecurring: (r) => update((d) => ({ ...d, recurring: upsert(d.recurring, r) })),
       deleteRecurring: (id) => update((d) => ({ ...d, recurring: d.recurring.filter((x) => x.id !== id), deleted: tombstone(d, id) })),
       saveGoal: (g) => update((d) => ({ ...d, goals: upsert(d.goals, g) })),
@@ -343,6 +349,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSync({ configured: false, status: 'off' })
       },
       syncNow: () => runSyncRef.current(),
+      limited: device.limited,
+      enableLimited: async (pin) => {
+        const next = { limited: true, pinHash: await hashPin(pin) }
+        saveDevicePrefs(next)
+        setDevice(next)
+      },
+      disableLimited: async (pin) => {
+        if ((await hashPin(pin)) !== device.pinHash) return false
+        const next = { limited: false }
+        saveDevicePrefs(next)
+        setDevice(next)
+        return true
+      },
       reset: async () => {
         setCfg(null)
         setSync({ configured: false, status: 'off' })
@@ -350,7 +369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setDataState(null)
       },
     }
-  }, [data, loading, today, commit, update, sync, setCfg])
+  }, [data, loading, today, commit, update, sync, setCfg, device])
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }
