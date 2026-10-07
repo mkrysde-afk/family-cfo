@@ -200,6 +200,11 @@ export interface Settings {
   payday?: number
   /** Сколько откладывать в подушку в месяц; 0 — приложение считает само */
   savingsTarget: Cents
+  /**
+   * Статьи бюджета на зарплатный период (продукты, бензин…): сумма резервируется сразу
+   * и уменьшается по мере трат в этой категории. undefined — статьи по умолчанию (продукты и авто).
+   */
+  budgetItems?: BudgetItem[]
   /** Ручные лимиты конвертов по категориям (перекрывают расчёт) */
   envelopeOverrides?: Record<string, Cents>
   /** Устарело: розовый стал темой. Оставлено для чтения старых копий. */
@@ -215,6 +220,12 @@ export interface Settings {
   lastSyncAt?: string
   /** Когда меняли общие настройки (подушка, конверты) — для синхронизации */
   updatedAt?: string
+}
+
+export interface BudgetItem {
+  categoryId: string
+  /** сумма на период от зарплаты до зарплаты; null — как рекомендует CFO */
+  amount: Cents | null
 }
 
 export interface SkippedOccurrence {

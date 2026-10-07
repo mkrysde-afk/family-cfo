@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
-  availableToSpend,
+  freeBudget,
+  type CycleEnvelope,
   cfoInsights,
   addDays,
   obligationsUntil,
@@ -15,6 +16,7 @@ import {
 import { useData, useStore } from '../../state/store'
 import { Icons, useLookups, useToast } from '../components/common'
 import { TransactionSheet } from '../components/TransactionSheet'
+import { BudgetItemSheet } from '../components/BudgetItemSheet'
 import type { Route } from '../App'
 import { ago } from './Sync'
 
@@ -27,7 +29,9 @@ export function Home({ go }: { go: (r: Route) => void }) {
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [planning, setPlanning] = useState(false)
 
-  const av = useMemo(() => availableToSpend(data, today), [data, today])
+  const fb = useMemo(() => freeBudget(data, today), [data, today])
+  const av = fb.breakdown
+  const [itemEdit, setItemEdit] = useState<CycleEnvelope | 'new' | null>(null)
   const people = useMemo(() => peopleBudget(data, today), [data, today])
   const planned = useMemo(() => plannedSpending(data, today), [data, today])
   const mandatory = useMemo(() => monthMandatory(data, today), [data, today])
@@ -103,14 +107,47 @@ export function Home({ go }: { go: (r: Route) => void }) {
         <button className="linklike" aria-label="Настройки" onClick={() => go('settings')} style={{ color: 'var(--text-3)', width: 24, height: 24 }}>{Icons.settings}</button>
       </div>
 
-      {/* Общий бюджет */}
-      <button className="hero center" style={{ width: '100%', background: 'none', border: 0, padding: '12px 0 18px' }} onClick={() => go('cfo')}>
-        <div className="hero-label">Можно потратить до зарплаты · {formatDate(cycle.nextPayday)}</div>
-        <div className={`hero-value num ${av.available < 0 ? 'bad' : ''}`}>{eur(av.available)}</div>
+      {/* Свободно до зарплаты (вариант А) */}
+      <button className="hero center" style={{ width: '100%', background: 'none', border: 0, padding: '12px 0 10px' }} onClick={() => go('cfo')}>
+        <div className="hero-label">Свободно до зарплаты · {formatDate(cycle.nextPayday)}</div>
+        <div className={`hero-value num ${fb.free < 0 ? 'bad' : ''}`}>{eur(fb.free)}</div>
         <div className="hero-sub">
-          {av.available > 0 ? `≈ ${eur(Math.floor(av.available / daysLeft))} в день · ${daysLeft} дн.` : 'До зарплаты денег не хватает'}
+          {fb.free > 0 ? `≈ ${eur(Math.floor(fb.free / daysLeft))} в день · ${daysLeft} дн.` : 'Свободных денег до зарплаты нет'}
         </div>
       </button>
+
+      {/* Полоска: как делятся деньги до зарплаты */}
+      {av.available > 0 && fb.envelopes.length > 0 && (
+        <div style={{ margin: '0 6px 12px' }}>
+          <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'var(--card-2)' }}>
+            {fb.envelopes.filter((e) => e.left > 0).map((e) => (
+              <span key={e.category.id} style={{ width: `${(e.left / av.available) * 100}%`, background: e.category.color }} />
+            ))}
+            {fb.free > 0 && <span style={{ width: `${(fb.free / av.available) * 100}%`, background: 'var(--accent)' }} />}
+          </div>
+          <div className="tiny muted center" style={{ marginTop: 4 }}>
+            из {eur(av.available)}: {fb.envelopes.filter((e) => e.left > 0).map((e) => `${e.category.name.toLowerCase()} ${eur(e.left)}`).join(' · ')}{fb.free > 0 ? ` · свободно ${eur(fb.free)}` : ''}
+          </div>
+        </div>
+      )}
+
+      {/* Статьи бюджета */}
+      {fb.envelopes.map((e) => (
+        <button key={e.category.id} className="card" style={{ width: '100%', border: 0, textAlign: 'left', display: 'block', padding: '11px 14px', marginBottom: 8 }} onClick={() => setItemEdit(e)}>
+          <div className="row">
+            <span style={{ fontWeight: 600 }}>{e.category.name}</span>
+            <b className={`num ${e.left < 0 ? 'bad' : ''}`}>{e.left < 0 ? `перерасход ${eur(-e.left)}` : eur(e.left)}</b>
+          </div>
+          <div className="bar" style={{ margin: '6px 0 4px' }}>
+            <span style={{ width: `${Math.min((e.spent / Math.max(e.amount, 1)) * 100, 100)}%`, background: e.left < 0 ? 'var(--bad)' : e.category.color }} />
+          </div>
+          <div className="row tiny faint">
+            <span>потрачено {eur(e.spent)} из {eur(e.amount)}</span>
+            <span>{e.manual ? `CFO: ${eur(e.suggested)}` : 'по рекомендации CFO'}</span>
+          </div>
+        </button>
+      ))}
+      <button className="linklike small" style={{ display: 'block', margin: '0 auto 14px' }} onClick={() => setItemEdit('new')}>+ статья</button>
 
       {cycle.salaryLate && (
         <button className="banner warn" onClick={() => go('tx')}>
@@ -242,6 +279,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
 
       {editing && <TransactionSheet edit={editing} onClose={() => setEditing(null)} />}
       {planning && <TransactionSheet plan onClose={() => setPlanning(false)} />}
+      {itemEdit && <BudgetItemSheet edit={itemEdit === 'new' ? undefined : itemEdit} onClose={() => setItemEdit(null)} />}
     </>
   )
 }
