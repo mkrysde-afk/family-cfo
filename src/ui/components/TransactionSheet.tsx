@@ -8,6 +8,8 @@ interface Props {
   /** редактирование существующей операции */
   edit?: Transaction
   initialType?: TxType
+  /** «Запланировать трату»: сумма сразу вычитается из бюджета, потом отмечается галочкой */
+  plan?: boolean
 }
 
 const TYPE_LABEL: [TxType, string][] = [
@@ -17,9 +19,10 @@ const TYPE_LABEL: [TxType, string][] = [
 ]
 
 /** Быстрое добавление / редактирование операции */
-export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Props) {
+export function TransactionSheet({ onClose, edit, initialType = 'expense', plan: planProp = false }: Props) {
   const data = useData()
-  const { today, addTransaction, updateTransaction, deleteTransaction, saveRecurring } = useStore()
+  const { today, addTransaction, updateTransaction, deleteTransaction, saveRecurring, confirmPending } = useStore()
+  const plan = planProp || edit?.status === 'planned'
   const toast = useToast()
   const people = data.members.filter((m) => !m.isFamily)
   const accounts = data.accounts.filter((a) => !a.archived)
@@ -94,7 +97,7 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
 
     const base = {
       type,
-      status: (edit?.status === 'pending' ? 'pending' : isFuture ? 'planned' : 'posted') as Transaction['status'],
+      status: (plan ? 'planned' : edit?.status === 'pending' ? 'pending' : isFuture ? 'planned' : 'posted') as Transaction['status'],
       date,
       amount,
       description: description.trim() || (type === 'transfer' ? 'Перевод' : data.categories.find((c) => c.id === effectiveCategory)?.name ?? ''),
@@ -119,14 +122,14 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
       toast('Сохранено')
     } else {
       addTransaction(base, learn)
-      toast(isFuture ? `Запланировано на ${date.split('-').reverse().join('.')}` : type === 'transfer' ? 'Перевод добавлен' : type === 'income' ? 'Доход добавлен' : 'Расход добавлен')
+      toast(plan ? `Запланировано: ${eur(amount)} вычтено из бюджета` : isFuture ? `Запланировано на ${date.split('-').reverse().join('.')}` : type === 'transfer' ? 'Перевод добавлен' : type === 'income' ? 'Доход добавлен' : 'Расход добавлен')
     }
     onClose()
   }
 
   return (
-    <Sheet title={edit ? 'Операция' : 'Новая операция'} onClose={onClose} onDone={save} doneDisabled={!canSave}>
-      <Segmented value={type} options={TYPE_LABEL} onChange={(t) => { setType(t); setCategoryId(undefined); setCategoryTouched(false) }} />
+    <Sheet title={plan ? (edit ? 'Запланированная трата' : 'Запланировать трату') : edit ? 'Операция' : 'Новая операция'} onClose={onClose} onDone={save} doneDisabled={!canSave}>
+      {!plan && <Segmented value={type} options={TYPE_LABEL} onChange={(t) => { setType(t); setCategoryId(undefined); setCategoryTouched(false) }} />}
       <input
         className="amount-input num"
         inputMode="decimal"
@@ -144,7 +147,7 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
           <div className="list">
             <div className="field">
               <label htmlFor="desc">Описание</label>
-              <input id="desc" placeholder="Kaufland" value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" />
+              <input id="desc" placeholder={plan ? 'Маникюр' : 'Kaufland'} value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" />
             </div>
             <div className="field">
               <label htmlFor="date">Дата</label>
@@ -230,7 +233,7 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
             <label htmlFor="note">Заметка</label>
             <input id="note" placeholder="Необязательно" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
-          {!edit && (
+          {!edit && !plan && (
             <div className="field">
               <label>Повторять</label>
               <span className="grow" />
@@ -249,7 +252,9 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
       )}
 
       <p className="small muted" style={{ margin: '0 4px 12px' }}>
-        {type === 'transfer'
+        {plan
+          ? 'Сумма сразу вычитается из общего бюджета. Когда потратите — отметьте галочкой на главном экране. В день траты пункт подсветится.'
+          : type === 'transfer'
           ? 'Перевод между своими счетами не считается расходом и не меняет общий капитал семьи.'
           : repeat
             ? `Будет добавлен регулярный платёж с ${date.split('-').reverse().join('.')}. В свою дату он попросит подтверждения.`
@@ -259,7 +264,12 @@ export function TransactionSheet({ onClose, edit, initialType = 'expense' }: Pro
       </p>
       {error && <div className="error">{error}</div>}
 
-      <button className="btn primary block" onClick={save} disabled={!canSave}>{edit ? 'Сохранить' : 'Добавить'}</button>
+      <button className="btn primary block" onClick={save} disabled={!canSave}>{edit ? 'Сохранить' : plan ? 'Запланировать' : 'Добавить'}</button>
+      {edit && edit.status === 'planned' && (
+        <button className="btn block" style={{ marginTop: 8 }} onClick={() => { confirmPending(edit.id); toast('Отмечено: потрачено'); onClose() }}>
+          Потрачено ✓
+        </button>
+      )}
       {edit && (
         <button className="btn danger block" style={{ marginTop: 8 }} onClick={() => { if (confirm('Удалить операцию?')) { deleteTransaction(edit.id); toast('Удалено'); onClose() } }}>
           Удалить операцию

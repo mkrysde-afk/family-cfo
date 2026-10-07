@@ -16,6 +16,8 @@ import {
 } from '../../engine'
 import { useData, useStore } from '../../state/store'
 import { Bar, ConfBadge, MonthBars, ScoreRing, useLookups } from '../components/common'
+import type { Route } from '../App'
+import { MonthOverview } from './Overview'
 
 const SEV_LABEL: Record<Insight['severity'], string> = { critical: 'Критично', warning: 'Внимание', info: 'К сведению', good: 'Хорошо' }
 const SEV_BADGE: Record<Insight['severity'], string> = { critical: 'bad', warning: 'warn', info: 'accent', good: 'good' }
@@ -40,7 +42,7 @@ export function InsightCard({ i }: { i: Insight }) {
   )
 }
 
-export function Cfo() {
+export function Cfo({ go }: { go: (r: Route) => void }) {
   const data = useData()
   const { today } = useStore()
   const { cat } = useLookups(data)
@@ -56,6 +58,11 @@ export function Cfo() {
   return (
     <>
       <h1 className="page-title">CFO</h1>
+      <p className="page-sub">Все расчёты: бюджет, план месяца, прогноз, советы.</p>
+
+      <MonthOverview go={go} />
+
+      <div className="section-title">Финансовая устойчивость</div>
 
       <div className="card">
         <div className="row" style={{ justifyContent: 'flex-start', gap: 16 }}>

@@ -163,7 +163,7 @@ export function App() {
           </button>
         )}
         {route === 'home' && <Home go={go} />}
-        {route === 'cfo' && <Cfo />}
+        {route === 'cfo' && <Cfo go={go} />}
         {route === 'tx' && <Transactions />}
         {route === 'more' && <More go={go} />}
         {route === 'budget' && <Budget />}

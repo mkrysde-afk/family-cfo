@@ -9,6 +9,8 @@ export interface Obligation {
   amount: Cents
   kind: 'pending' | 'planned' | 'recurring' | 'transfer'
   categoryId?: string
+  /** с какого счёта спишется */
+  accountId?: string
 }
 
 function accountKind(data: AppData, id?: string) {
@@ -28,19 +30,19 @@ export function obligationsUntil(data: AppData, to: ISODate, todayISO: ISODate):
     if (tx.status === 'posted' || tx.date > to) continue
     if (tx.type === 'expense') {
       if (accountKind(data, tx.accountId) === 'savings') continue
-      out.push({ label: tx.description, date: tx.date, amount: tx.amount, kind: tx.status === 'pending' ? 'pending' : 'planned', categoryId: tx.categoryId })
+      out.push({ label: tx.description, date: tx.date, amount: tx.amount, kind: tx.status === 'pending' ? 'pending' : 'planned', categoryId: tx.categoryId, accountId: tx.accountId })
     } else if (tx.type === 'transfer') {
       const fromSpendable = accountKind(data, tx.fromAccountId) !== 'savings'
       const toSpendable = accountKind(data, tx.toAccountId) !== 'savings'
-      if (fromSpendable && !toSpendable) out.push({ label: tx.description || 'Перевод в накопления', date: tx.date, amount: tx.amount, kind: 'transfer' })
+      if (fromSpendable && !toSpendable) out.push({ label: tx.description || 'Перевод в накопления', date: tx.date, amount: tx.amount, kind: 'transfer', accountId: tx.fromAccountId })
     }
   }
   for (const o of occurrences(data, data.settings.trackingStart, to, todayISO)) {
     const r = o.recurring
     if (o.state !== 'due' && o.state !== 'upcoming') continue
     if (accountKind(data, r.accountId) === 'savings') continue
-    if (r.type === 'expense') out.push({ label: r.name, date: o.date, amount: r.amount, kind: 'recurring', categoryId: r.categoryId })
-    else if (r.type === 'transfer' && accountKind(data, r.toAccountId) === 'savings') out.push({ label: r.name, date: o.date, amount: r.amount, kind: 'transfer' })
+    if (r.type === 'expense') out.push({ label: r.name, date: o.date, amount: r.amount, kind: 'recurring', categoryId: r.categoryId, accountId: r.accountId })
+    else if (r.type === 'transfer' && accountKind(data, r.toAccountId) === 'savings') out.push({ label: r.name, date: o.date, amount: r.amount, kind: 'transfer', accountId: r.accountId })
   }
   return out.sort((a, b) => a.date.localeCompare(b.date))
 }
