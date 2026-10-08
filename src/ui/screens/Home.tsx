@@ -71,9 +71,11 @@ export function Home({ go }: { go: (r: Route) => void }) {
     toast(`Отмечено: ${n}`)
   }
 
-  function tick(t: Transaction) {
-    confirmPending(t.id)
-    toast(`«${t.description}» — потрачено`)
+  /** запланированная трата: галочка спрашивает, сколько потратили на самом деле */
+  const [ticking, setTicking] = useState<Transaction | null>(null)
+  function tick(t: Transaction, amount: number) {
+    confirmPending(t.id, amount)
+    toast(`«${t.description}» — потрачено ${eur(amount, { cents: true })}`)
   }
 
   const [confirming, setConfirming] = useState<MandatoryItem | null>(null)
@@ -204,7 +206,7 @@ export function Home({ go }: { go: (r: Route) => void }) {
             return (
               <div key={t.id} className="row" style={{ padding: '6px 0' }}>
                 {!limited || t.owner === me ? (
-                  <button aria-label={`Отметить «${t.description}» потраченным`} onClick={() => tick(t)}
+                  <button aria-label={`Отметить «${t.description}» потраченным`} onClick={() => setTicking(t)}
                     style={{ width: 24, height: 24, borderRadius: 12, border: '2px solid var(--text-3)', background: 'none', flex: 'none', padding: 0 }} />
                 ) : (
                   <span style={{ width: 24, flex: 'none' }} />
@@ -316,6 +318,10 @@ export function Home({ go }: { go: (r: Route) => void }) {
       {confirming && (
         <ConfirmSheet label={confirming.label} date={confirming.date} expected={confirming.amount} income={confirming.income}
           onConfirm={(amount) => confirmMandatory(confirming, amount)} onClose={() => setConfirming(null)} />
+      )}
+      {ticking && (
+        <ConfirmSheet title="Потрачено" label={ticking.description} date={ticking.date} expected={ticking.amount}
+          onConfirm={(amount) => tick(ticking, amount)} onClose={() => setTicking(null)} />
       )}
       {itemEdit && <BudgetItemSheet edit={itemEdit === 'new' ? undefined : itemEdit} onClose={() => setItemEdit(null)} onOpenTx={(t) => { setItemEdit(null); setEditing(t) }} />}
     </>

@@ -6,8 +6,10 @@ import { Sheet } from './common'
  * Подтверждение регулярного платежа или поступления с фактической суммой:
  * ожидалось 40 €, списали 39 или 41 — вписываем, сколько было на самом деле.
  */
-export function ConfirmSheet({ label, date, expected, income, onConfirm, onClose }: {
+export function ConfirmSheet({ label, date, expected, income, title, onConfirm, onClose }: {
   label: string
+  /** заголовок окна (по умолчанию — «Платёж списался» / «Поступление пришло») */
+  title?: string
   date: string
   expected: Cents
   income?: boolean
@@ -25,7 +27,7 @@ export function ConfirmSheet({ label, date, expected, income, onConfirm, onClose
   }
 
   return (
-    <Sheet title={income ? 'Поступление пришло' : 'Платёж списался'} onClose={onClose} onDone={done} doneDisabled={!amount} doneLabel="Подтвердить">
+    <Sheet title={title ?? (income ? 'Поступление пришло' : 'Платёж списался')} onClose={onClose} onDone={done} doneDisabled={!amount} doneLabel="Подтвердить">
       <div className="center" style={{ marginBottom: 4 }}>
         <div style={{ fontWeight: 600 }}>{label}</div>
         <div className="small muted">{formatDate(date, true)} · ожидалось {eur(expected, { cents: true })}</div>
